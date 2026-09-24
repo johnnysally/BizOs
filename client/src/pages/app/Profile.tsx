@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { profileApi } from '../../api/profile';
 
 type ProfileTab = 'personal' | 'security' | 'preferences' | 'access';
 
@@ -21,7 +22,26 @@ export function Profile() {
   const [preferences, setPreferences] = useState({ email: true, push: true, weekly: true, sounds: true, compact: false });
   const [branches, setBranches] = useState({ main: true, industrial: true });
 
-  const saveProfile = () => { setSaved(true); window.setTimeout(() => setSaved(false), 2400); };
+  useEffect(() => {
+    let active = true;
+    void profileApi.get().then((profile) => {
+      if (!active) return;
+      setFullName(String(profile.ownerName ?? profile.name ?? fullName));
+      setEmail(String(profile.email ?? email));
+      setPhone(String(profile.phone ?? phone));
+    }).catch(() => undefined);
+    return () => { active = false; };
+  }, []);
+
+  const saveProfile = async () => {
+    try {
+      await profileApi.update({ name: fullName, email, phone });
+      setSaved(true);
+      window.setTimeout(() => setSaved(false), 2400);
+    } catch {
+      setSaved(false);
+    }
+  };
   const togglePreference = (key: keyof typeof preferences) => setPreferences((current) => ({ ...current, [key]: !current[key] }));
 
   return (

@@ -20,6 +20,7 @@ import {
   Users as UsersIcon,
 } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
+import { useAuth } from '../context/AuthContext';
 import { Dashboard } from '../pages/app/Dashboard';
 import { POS } from '../pages/app/POS';
 import { Sales } from '../pages/app/Sales';
@@ -207,9 +208,9 @@ const renderPage = (page: AppPage, onNavigate: (nextPage: AppPage) => void) => {
     case 'public-plans':
       return <PublicFeaturePage page="public-plans" onNavigate={onNavigate} />;
     case 'login':
-      return <Login />;
+      return <Login onNavigate={onNavigate} />;
     case 'register':
-      return <Register />;
+      return <Register onNavigate={onNavigate} />;
     case 'verify':
       return <Verify />;
     case 'pending':
@@ -225,8 +226,10 @@ const renderPage = (page: AppPage, onNavigate: (nextPage: AppPage) => void) => {
 
 export function AppRoutes() {
   const { resolvedTheme, setTheme } = useTheme();
+  const { session, loading, logout } = useAuth();
   const [activePage, setActivePage] = useState<AppPage>('landing');
-  const [currentRole, setCurrentRole] = useState<UserRole>('Owner');
+  const roleName = session?.user.role;
+  const currentRole: UserRole = roleName === 'Manager' || roleName === 'Inventory Manager' || roleName === 'Cashier' || roleName === 'Accountant' ? roleName : 'Owner';
   const [search, setSearch] = useState('');
   const [collapsedGroups, setCollapsedGroups] = useState<string[]>([]);
 
@@ -258,6 +261,9 @@ export function AppRoutes() {
   ], []);
 
   if (activePage === 'landing' || activePage.startsWith('public-')) return renderPage(activePage, navigate);
+  if (activePage === 'login' || activePage === 'register' || activePage === 'verify' || activePage === 'pending' || activePage === 'legal' || activePage === 'server-error') return renderPage(activePage, navigate);
+  if (loading) return <div className="auth-shell"><div className="auth-panel"><p className="eyebrow">BizOs workspace</p><h2>Loading your session...</h2></div></div>;
+  if (!session) return renderPage('login', navigate);
 
   return (
     <div className="app-shell">
@@ -335,13 +341,8 @@ export function AppRoutes() {
           </div>
 
           <div className="topbar-actions">
-            <label className="role-switcher">
-              <span>Viewing as</span>
-              <select value={currentRole} onChange={(event) => { setCurrentRole(event.target.value as UserRole); setActivePage('dashboard'); }} aria-label="Current user role">
-                {(Object.keys(rolePermissions) as UserRole[]).map((role) => <option key={role}>{role}</option>)}
-              </select>
-            </label>
-            <button className="secondary-button small" type="button" onClick={() => setActivePage('login')}>Sign out</button>
+            <span className="role-switcher">{currentRole}</span>
+            <button className="secondary-button small" type="button" onClick={() => { void logout(); setActivePage('landing'); }}>Sign out</button>
             <button className="icon-button subtle" type="button" onClick={() => setActivePage('notifications')} aria-label="Open notifications" title="Open notifications">
               <Bell size={16} />
             </button>

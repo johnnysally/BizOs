@@ -1,14 +1,15 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { productApi } from '../../api/products';
 
 type ProductStatus = 'Active' | 'Low stock' | 'Out of stock' | 'Archived';
-type Product = { id: number; name: string; sku: string; category: string; price: number; cost: number; stock: number; reorder: number; unit: string; status: ProductStatus; supplier: string };
+type Product = { id: string; name: string; sku: string; category: string; price: number; cost: number; stock: number; reorder: number; unit: string; status: ProductStatus; supplier: string };
 
 const initialProducts: Product[] = [
-  { id: 1, name: '2.5mm Twin Cable', sku: 'CAB-2.5-TW', category: 'Cables', price: 8500, cost: 6200, stock: 12, reorder: 20, unit: 'coil', status: 'Low stock', supplier: 'Hydra Electric' },
-  { id: 2, name: '13A Double Socket', sku: 'SOC-13A-D', category: 'Sockets', price: 450, cost: 280, stock: 38, reorder: 15, unit: 'piece', status: 'Active', supplier: 'PowerGrid Kenya' },
-  { id: 3, name: '20A MCB', sku: 'BRK-20A', category: 'Breakers', price: 650, cost: 420, stock: 7, reorder: 10, unit: 'piece', status: 'Low stock', supplier: 'Vanta Lighting' },
-  { id: 4, name: 'LED Bulb 12W', sku: 'LGT-12W', category: 'Lighting', price: 320, cost: 180, stock: 42, reorder: 20, unit: 'piece', status: 'Active', supplier: 'Vanta Lighting' },
-  { id: 5, name: '16-inch Stand Fan', sku: 'FAN-16-ST', category: 'Appliances', price: 6400, cost: 5100, stock: 0, reorder: 5, unit: 'piece', status: 'Out of stock', supplier: 'Coast Appliances' },
+  { id: '1', name: '2.5mm Twin Cable', sku: 'CAB-2.5-TW', category: 'Cables', price: 8500, cost: 6200, stock: 12, reorder: 20, unit: 'coil', status: 'Low stock', supplier: 'Hydra Electric' },
+  { id: '2', name: '13A Double Socket', sku: 'SOC-13A-D', category: 'Sockets', price: 450, cost: 280, stock: 38, reorder: 15, unit: 'piece', status: 'Active', supplier: 'PowerGrid Kenya' },
+  { id: '3', name: '20A MCB', sku: 'BRK-20A', category: 'Breakers', price: 650, cost: 420, stock: 7, reorder: 10, unit: 'piece', status: 'Low stock', supplier: 'Vanta Lighting' },
+  { id: '4', name: 'LED Bulb 12W', sku: 'LGT-12W', category: 'Lighting', price: 320, cost: 180, stock: 42, reorder: 20, unit: 'piece', status: 'Active', supplier: 'Vanta Lighting' },
+  { id: '5', name: '16-inch Stand Fan', sku: 'FAN-16-ST', category: 'Appliances', price: 6400, cost: 5100, stock: 0, reorder: 5, unit: 'piece', status: 'Out of stock', supplier: 'Coast Appliances' },
 ];
 
 const money = (amount: number) => `KES ${amount.toLocaleString('en-KE')}`;
@@ -16,22 +17,34 @@ const statusFor = (stock: number, reorder: number): ProductStatus => stock === 0
 
 export function Products() {
   const [products, setProducts] = useState(initialProducts);
-  const [selectedId, setSelectedId] = useState(1);
+  const [selectedId, setSelectedId] = useState('1');
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('All categories');
   const [status, setStatus] = useState('All statuses');
   const [showForm, setShowForm] = useState(false);
-  const [selectedRows, setSelectedRows] = useState<number[]>([]);
+  const [selectedRows, setSelectedRows] = useState<string[]>([]);
   const [notice, setNotice] = useState('');
   const [form, setForm] = useState({ name: '', sku: '', category: 'Cables', price: '', cost: '', stock: '', reorder: '10', unit: 'piece', supplier: '' });
+  useEffect(() => {
+    let active = true;
+    void productApi.list({ page: 1, limit: 100 }).then((response) => {
+      if (!active || !response.data.length) return;
+      setProducts(response.data.map((item) => {
+        const stock = Number(item.stock ?? 0);
+        const reorder = Number(item.lowStockThreshold ?? item.reorder ?? 0);
+        return { id: String(item._id ?? item.id), name: String(item.name ?? ''), sku: String(item.sku ?? item.barcode ?? ''), category: String(item.category ?? 'Uncategorised'), price: Number(item.price ?? 0), cost: Number(item.cost ?? 0), stock, reorder, unit: String(item.unit ?? 'piece'), status: item.active === false ? 'Archived' : statusFor(stock, reorder), supplier: String(item.supplier?.name ?? item.supplier ?? 'Supplier pending') };
+      }));
+    }).catch(() => setNotice('Unable to load products from the server.'));
+    return () => { active = false; };
+  }, []);
   const categories = ['All categories', ...new Set(products.map((product) => product.category))];
   const selectedProduct = products.find((product) => product.id === selectedId) ?? products[0];
   const filteredProducts = useMemo(() => products.filter((product) => (category === 'All categories' || product.category === category) && (status === 'All statuses' || product.status === status) && `${product.name} ${product.sku} ${product.supplier}`.toLowerCase().includes(search.toLowerCase())), [category, products, search, status]);
   const inventoryValue = products.reduce((sum, product) => sum + product.cost * product.stock, 0);
   const averageMargin = Math.round(products.reduce((sum, product) => sum + ((product.price - product.cost) / product.price) * 100, 0) / products.length);
-  const toggleRow = (id: number) => setSelectedRows((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
-  const archiveSelected = () => { setProducts((current) => current.map((product) => selectedRows.includes(product.id) ? { ...product, status: 'Archived' } : product)); setSelectedRows([]); setNotice('Selected products archived'); };
-  const addProduct = () => { const price = Number(form.price); const cost = Number(form.cost); const stock = Number(form.stock); const reorder = Number(form.reorder); if (!form.name.trim() || !form.sku.trim() || !Number.isFinite(price) || !Number.isFinite(cost)) return; const nextId = Math.max(...products.map((product) => product.id)) + 1; setProducts((current) => [...current, { id: nextId, name: form.name, sku: form.sku, category: form.category, price, cost, stock: stock || 0, reorder: reorder || 0, unit: form.unit, status: statusFor(stock || 0, reorder || 0), supplier: form.supplier || 'Supplier pending' }]); setForm({ name: '', sku: '', category: 'Cables', price: '', cost: '', stock: '', reorder: '10', unit: 'piece', supplier: '' }); setShowForm(false); setNotice('Product added to catalog'); };
+  const toggleRow = (id: string) => setSelectedRows((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
+  const archiveSelected = async () => { await Promise.all(selectedRows.map((id) => productApi.remove(id))); setProducts((current) => current.filter((product) => !selectedRows.includes(product.id))); setSelectedRows([]); setNotice('Selected products archived'); };
+  const addProduct = async () => { const price = Number(form.price); const cost = Number(form.cost); const stock = Number(form.stock); const reorder = Number(form.reorder); if (!form.name.trim() || !form.sku.trim() || !Number.isFinite(price) || !Number.isFinite(cost)) return; try { const created = await productApi.create({ name: form.name, sku: form.sku, category: form.category, price, cost, stock: stock || 0, lowStockThreshold: reorder || 0, unit: form.unit, supplier: form.supplier || undefined }); const newProduct: Product = { id: String(created._id ?? created.id), name: String(created.name ?? form.name), sku: String(created.sku ?? form.sku), category: String(created.category ?? form.category), price: Number(created.price ?? price), cost: Number(created.cost ?? cost), stock: Number(created.stock ?? stock ?? 0), reorder: Number(created.lowStockThreshold ?? reorder ?? 0), unit: String(created.unit ?? form.unit), status: created.active === false ? 'Archived' : statusFor(Number(created.stock ?? stock ?? 0), Number(created.lowStockThreshold ?? reorder ?? 0)), supplier: String(created.supplier?.name ?? created.supplier ?? (form.supplier || 'Supplier pending')) }; setProducts((current) => [...current, newProduct]); setSelectedId(newProduct.id); setForm({ name: '', sku: '', category: 'Cables', price: '', cost: '', stock: '', reorder: '10', unit: 'piece', supplier: '' }); setShowForm(false); setNotice('Product added to catalog'); } catch { setNotice('Unable to add product. Check the required fields.'); } };
 
   return (
     <div className="products-workspace">

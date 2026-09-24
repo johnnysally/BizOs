@@ -1,4 +1,6 @@
-﻿import { useState } from 'react';
+﻿import { useEffect, useState } from 'react';
+import { reportApi } from '../../api/reports';
+import { insightApi } from '../../api/insights';
 import { Customers } from './Customers';
 import { Inventory } from './Inventory';
 import { Reports } from './Reports';
@@ -11,23 +13,43 @@ export function Dashboard() {
   const [range, setRange] = useState('This week');
   const [branch, setBranch] = useState('All branches');
   const [notice, setNotice] = useState('');
-  const summary = [
+  const [summary, setSummary] = useState([
     { label: 'Today sales', value: 'KES 184,250', change: '+12.4%' },
     { label: 'Gross profit', value: 'KES 52,480', change: '+9.1%' },
     { label: 'Transactions', value: '87', change: '+18' },
     { label: 'Avg. order', value: 'KES 2,118', change: '+4.8%' },
-  ];
+  ]);
+  const [topProducts, setTopProducts] = useState([
+    { name: '2.5mm Twin Cable', units: 42, revenue: 'KES 357,000' },
+    { name: 'LED Bulb 12W', units: 38, revenue: 'KES 12,160' },
+    { name: '13A Double Socket', units: 31, revenue: 'KES 13,950' },
+  ]);
+
+  useEffect(() => {
+    const period = range === 'Today' ? 'today' : range === 'This month' ? 'month' : range === 'This quarter' ? 'quarter' : 'week';
+    let active = true;
+    void Promise.all([reportApi.salesSummary({ period }), reportApi.topProducts({ period, limit: 3 }), insightApi.today()])
+      .then(([sales, products, insight]) => {
+        if (!active) return;
+        const totalSales = Number(sales.totalSales ?? 0);
+        const transactions = Number(sales.totalTransactions ?? 0);
+        setSummary([
+          { label: 'Today sales', value: `KES ${totalSales.toLocaleString('en-KE')}`, change: 'Live' },
+          { label: 'Gross profit', value: `KES ${Math.max(0, totalSales - Number(sales.totalTax ?? 0)).toLocaleString('en-KE')}`, change: 'Live' },
+          { label: 'Transactions', value: transactions.toLocaleString('en-KE'), change: 'Live' },
+          { label: 'Avg. order', value: `KES ${transactions ? Math.round(totalSales / transactions).toLocaleString('en-KE') : '0'}`, change: 'Live' },
+        ]);
+        setTopProducts(products.map((product) => ({ name: product.name, units: Number(product.qty ?? 0), revenue: `KES ${Number(product.revenue ?? 0).toLocaleString('en-KE')}` })));
+        if (insight.lowStock.length) setNotice(`${insight.lowStock.length} stock alerts need attention`);
+      })
+      .catch(() => setNotice('Dashboard data is temporarily unavailable.'));
+    return () => { active = false; };
+  }, [range]);
 
   const recentSales = [
     { receipt: 'INV-00482', customer: 'James Ndungu', amount: 'KES 3,450', status: 'Paid' },
     { receipt: 'INV-00481', customer: 'Sunset Homes', amount: 'KES 16,820', status: 'Paid' },
     { receipt: 'INV-00480', customer: 'Kariuki Tech', amount: 'KES 9,625', status: 'Pending' },
-  ];
-
-  const topProducts = [
-    { name: '2.5mm Twin Cable', units: 42, revenue: 'KES 357,000' },
-    { name: 'LED Bulb 12W', units: 38, revenue: 'KES 12,160' },
-    { name: '13A Double Socket', units: 31, revenue: 'KES 13,950' },
   ];
 
   const tabs: Array<{ id: DashboardPage; label: string }> = [

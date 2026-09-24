@@ -1,32 +1,41 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { customerApi } from '../../api/customers';
 
 type CustomerSegment = 'VIP' | 'Business' | 'Retail' | 'At risk';
-type Customer = { id: number; name: string; phone: string; email: string; purchases: number; outstanding: number; orders: number; segment: CustomerSegment; city: string; creditLimit: number; lastPurchase: string; points: number; notes: string };
+type Customer = { id: string; name: string; phone: string; email: string; purchases: number; outstanding: number; orders: number; segment: CustomerSegment; city: string; creditLimit: number; lastPurchase: string; points: number; notes: string };
 
 const initialCustomers: Customer[] = [
-  { id: 1, name: 'James Ndungu', phone: '+254 712 422 691', email: 'james@ndungu.co.ke', purchases: 402400, outstanding: 18250, orders: 42, segment: 'VIP', city: 'Nairobi', creditLimit: 100000, lastPurchase: 'Today', points: 8240, notes: 'Prefers M-Pesa and morning deliveries.' },
-  { id: 2, name: 'Sunset Homes', phone: '+254 722 611 221', email: 'accounts@sunsethomes.co.ke', purchases: 861700, outstanding: 72500, orders: 68, segment: 'Business', city: 'Nairobi', creditLimit: 150000, lastPurchase: '2 days ago', points: 12400, notes: 'Monthly construction supply account.' },
-  { id: 3, name: 'Hydra Construction', phone: '+254 733 881 901', email: 'procurement@hydra.co.ke', purchases: 256900, outstanding: 9400, orders: 26, segment: 'Business', city: 'Mombasa', creditLimit: 75000, lastPurchase: '5 days ago', points: 4860, notes: 'Verify purchase order before dispatch.' },
-  { id: 4, name: 'Lilian Atieno', phone: '+254 701 440 289', email: 'lilian@example.com', purchases: 68400, outstanding: 0, orders: 15, segment: 'Retail', city: 'Nairobi', creditLimit: 0, lastPurchase: '1 week ago', points: 1420, notes: 'Frequent lighting customer.' },
-  { id: 5, name: 'Brian Otieno', phone: '+254 719 210 334', email: 'brian@example.com', purchases: 38200, outstanding: 18900, orders: 7, segment: 'At risk', city: 'Nakuru', creditLimit: 25000, lastPurchase: '3 weeks ago', points: 380, notes: 'Follow up on overdue balance.' },
+  { id: '1', name: 'James Ndungu', phone: '+254 712 422 691', email: 'james@ndungu.co.ke', purchases: 402400, outstanding: 18250, orders: 42, segment: 'VIP', city: 'Nairobi', creditLimit: 100000, lastPurchase: 'Today', points: 8240, notes: 'Prefers M-Pesa and morning deliveries.' },
+  { id: '2', name: 'Sunset Homes', phone: '+254 722 611 221', email: 'accounts@sunsethomes.co.ke', purchases: 861700, outstanding: 72500, orders: 68, segment: 'Business', city: 'Nairobi', creditLimit: 150000, lastPurchase: '2 days ago', points: 12400, notes: 'Monthly construction supply account.' },
+  { id: '3', name: 'Hydra Construction', phone: '+254 733 881 901', email: 'procurement@hydra.co.ke', purchases: 256900, outstanding: 9400, orders: 26, segment: 'Business', city: 'Mombasa', creditLimit: 75000, lastPurchase: '5 days ago', points: 4860, notes: 'Verify purchase order before dispatch.' },
+  { id: '4', name: 'Lilian Atieno', phone: '+254 701 440 289', email: 'lilian@example.com', purchases: 68400, outstanding: 0, orders: 15, segment: 'Retail', city: 'Nairobi', creditLimit: 0, lastPurchase: '1 week ago', points: 1420, notes: 'Frequent lighting customer.' },
+  { id: '5', name: 'Brian Otieno', phone: '+254 719 210 334', email: 'brian@example.com', purchases: 38200, outstanding: 18900, orders: 7, segment: 'At risk', city: 'Nakuru', creditLimit: 25000, lastPurchase: '3 weeks ago', points: 380, notes: 'Follow up on overdue balance.' },
 ];
 
 const money = (amount: number) => `KES ${amount.toLocaleString('en-KE')}`;
 
 export function Customers() {
   const [customers, setCustomers] = useState(initialCustomers);
-  const [selectedId, setSelectedId] = useState(1);
+  const [selectedId, setSelectedId] = useState('1');
   const [search, setSearch] = useState('');
   const [segment, setSegment] = useState('All segments');
   const [showForm, setShowForm] = useState(false);
   const [showNotes, setShowNotes] = useState(false);
   const [notice, setNotice] = useState('');
   const [form, setForm] = useState({ name: '', phone: '', email: '', city: '', segment: 'Retail' });
+  useEffect(() => {
+    let active = true;
+    void customerApi.list({ page: 1, limit: 100 }).then((response) => {
+      if (!active || !response.data.length) return;
+      setCustomers(response.data.map((item) => ({ id: String(item._id ?? item.id), name: String(item.name ?? ''), phone: String(item.phone ?? ''), email: String(item.email ?? 'No email added'), purchases: Number(item.totalPurchases ?? item.purchases ?? 0), outstanding: Number(item.outstanding ?? item.balance ?? 0), orders: Number(item.ordersCount ?? item.orders ?? 0), segment: (item.segment ?? 'Retail') as CustomerSegment, city: String(item.city ?? item.address ?? 'Kenya'), creditLimit: Number(item.creditLimit ?? 0), lastPurchase: String(item.lastPurchase ?? 'No purchases'), points: Number(item.points ?? 0), notes: String(item.notes ?? '') })));
+    }).catch(() => setNotice('Unable to load customers from the server.'));
+    return () => { active = false; };
+  }, []);
   const selectedCustomer = customers.find((customer) => customer.id === selectedId) ?? customers[0];
   const filteredCustomers = useMemo(() => customers.filter((customer) => (segment === 'All segments' || customer.segment === segment) && `${customer.name} ${customer.phone} ${customer.email} ${customer.city}`.toLowerCase().includes(search.toLowerCase())), [customers, search, segment]);
   const totalPurchases = customers.reduce((sum, customer) => sum + customer.purchases, 0);
   const totalOutstanding = customers.reduce((sum, customer) => sum + customer.outstanding, 0);
-  const addCustomer = () => { if (!form.name.trim() || !form.phone.trim()) return; const nextId = Math.max(...customers.map((customer) => customer.id)) + 1; setCustomers((current) => [...current, { id: nextId, name: form.name, phone: form.phone, email: form.email || 'No email added', city: form.city || 'Kenya', purchases: 0, outstanding: 0, orders: 0, segment: form.segment as CustomerSegment, creditLimit: 0, lastPurchase: 'No purchases', points: 0, notes: 'New customer account.' }]); setSelectedId(nextId); setForm({ name: '', phone: '', email: '', city: '', segment: 'Retail' }); setShowForm(false); setNotice('Customer added successfully'); };
+  const addCustomer = async () => { if (!form.name.trim() || !form.phone.trim()) return; try { const created = await customerApi.create({ name: form.name, phone: form.phone, email: form.email || undefined, address: form.city || undefined }); const newCustomer: Customer = { id: String(created._id ?? created.id), name: String(created.name ?? form.name), phone: String(created.phone ?? form.phone), email: String(created.email ?? (form.email || 'No email added')), purchases: 0, outstanding: 0, orders: 0, segment: (created.segment ?? form.segment) as CustomerSegment, city: String(created.city ?? created.address ?? (form.city || 'Kenya')), creditLimit: Number(created.creditLimit ?? 0), lastPurchase: 'No purchases', points: 0, notes: String(created.notes ?? 'New customer account.') }; setCustomers((current) => [...current, newCustomer]); setSelectedId(newCustomer.id); setForm({ name: '', phone: '', email: '', city: '', segment: 'Retail' }); setShowForm(false); setNotice('Customer added successfully'); } catch { setNotice('Unable to create customer. Check the required fields.'); } };
   const sendReminder = () => setNotice(`Payment reminder sent to ${selectedCustomer.name}`);
 
   return (
