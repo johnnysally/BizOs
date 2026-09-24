@@ -40,7 +40,7 @@ export function Dropdown({ trigger, items, align = 'right', className }: Props) 
       {open && (
         <div
           className={classNames(
-            'absolute z-40 mt-1 min-w-[180px] bg-white border border-slate-200 rounded-lg shadow-lg py-1',
+            'absolute z-40 mt-1 min-w-[180px] bg-surface border border-border rounded-lg shadow-lg py-1',
             align === 'right' ? 'right-0' : 'left-0'
           )}
         >
@@ -57,8 +57,8 @@ export function Dropdown({ trigger, items, align = 'right', className }: Props) 
                 'w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition',
                 'disabled:opacity-50 disabled:cursor-not-allowed',
                 item.danger
-                  ? 'text-red-600 hover:bg-red-50'
-                  : 'text-slate-700 hover:bg-slate-50'
+                  ? 'text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-500/10'
+                  : 'text-fg hover:bg-elevated'
               )}
             >
               {item.icon}

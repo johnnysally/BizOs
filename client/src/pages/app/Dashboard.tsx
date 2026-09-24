@@ -1,237 +1,339 @@
-﻿import { useEffect, useState } from 'react';
-import { reportApi } from '../../api/reports';
-import { insightApi } from '../../api/insights';
-import { Customers } from './Customers';
-import { Inventory } from './Inventory';
-import { Reports } from './Reports';
-import { Sales } from './Sales';
+import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import {
+  ShoppingCart,
+  Package,
+  Users,
+  DollarSign,
+  TrendingUp,
+  AlertTriangle,
+  Sparkles,
+} from 'lucide-react';
+import { Card } from '@/components/ui/Card';
+import { StatCard } from '@/components/ui/StatCard';
+import { Badge } from '@/components/ui/Badge';
+import { Button } from '@/components/ui/Button';
+import { Spinner } from '@/components/ui/Spinner';
+import { useAuth } from '@/context/AuthContext';
+import { useClient } from '@/context/ClientContext';
+import { reportApi, SalesSummary, TopProduct } from '@/api/reports';
+import { insightApi, InsightTodayResponse } from '@/api/insights';
+import { saleApi } from '@/api/sales';
+import { productApi } from '@/api/products';
+import { currency } from '@/utils/currency';
+import { formatDateTime, relativeTime } from '@/utils/date';
+import { ROUTES, ROLES } from '@/utils/constants';
+import type { Sale } from '@/types/sale';
 
-type DashboardPage = 'sales' | 'inventory' | 'customers' | 'reports';
+export default function Dashboard() {
+  const { user, tenant } = useAuth();
+  const { settings } = useClient();
 
-export function Dashboard() {
-  const [activeTab, setActiveTab] = useState<DashboardPage>('sales');
-  const [range, setRange] = useState('This week');
-  const [branch, setBranch] = useState('All branches');
-  const [notice, setNotice] = useState('');
-  const [summary, setSummary] = useState([
-    { label: 'Today sales', value: 'KES 184,250', change: '+12.4%' },
-    { label: 'Gross profit', value: 'KES 52,480', change: '+9.1%' },
-    { label: 'Transactions', value: '87', change: '+18' },
-    { label: 'Avg. order', value: 'KES 2,118', change: '+4.8%' },
-  ]);
-  const [topProducts, setTopProducts] = useState([
-    { name: '2.5mm Twin Cable', units: 42, revenue: 'KES 357,000' },
-    { name: 'LED Bulb 12W', units: 38, revenue: 'KES 12,160' },
-    { name: '13A Double Socket', units: 31, revenue: 'KES 13,950' },
-  ]);
+  const [loading, setLoading] = useState(true);
+  const [summary, setSummary] = useState<SalesSummary | null>(null);
+  const [topProducts, setTopProducts] = useState<TopProduct[]>([]);
+  const [recentSales, setRecentSales] = useState<Sale[]>([]);
+  const [lowStock, setLowStock] = useState(0);
+  const [insights, setInsights] = useState<InsightTodayResponse | null>(null);
+  const [productCount, setProductCount] = useState(0);
+
+  const curr = (settings.currency as string) || 'KES';
+  const role = user?.role || ROLES.CASHIER;
+  const isManager = role === ROLES.OWNER || role === ROLES.MANAGER;
 
   useEffect(() => {
-    const period = range === 'Today' ? 'today' : range === 'This month' ? 'month' : range === 'This quarter' ? 'quarter' : 'week';
-    let active = true;
-    void Promise.all([reportApi.salesSummary({ period }), reportApi.topProducts({ period, limit: 3 }), insightApi.today()])
-      .then(([sales, products, insight]) => {
-        if (!active) return;
-        const totalSales = Number(sales.totalSales ?? 0);
-        const transactions = Number(sales.totalTransactions ?? 0);
-        setSummary([
-          { label: 'Today sales', value: `KES ${totalSales.toLocaleString('en-KE')}`, change: 'Live' },
-          { label: 'Gross profit', value: `KES ${Math.max(0, totalSales - Number(sales.totalTax ?? 0)).toLocaleString('en-KE')}`, change: 'Live' },
-          { label: 'Transactions', value: transactions.toLocaleString('en-KE'), change: 'Live' },
-          { label: 'Avg. order', value: `KES ${transactions ? Math.round(totalSales / transactions).toLocaleString('en-KE') : '0'}`, change: 'Live' },
-        ]);
-        setTopProducts(products.map((product) => ({ name: product.name, units: Number(product.qty ?? 0), revenue: `KES ${Number(product.revenue ?? 0).toLocaleString('en-KE')}` })));
-        if (insight.lowStock.length) setNotice(`${insight.lowStock.length} stock alerts need attention`);
-      })
-      .catch(() => setNotice('Dashboard data is temporarily unavailable.'));
-    return () => { active = false; };
-  }, [range]);
+    const load = async () => {
+      setLoading(true);
+      try {
+        const tasks: Promise<unknown>[] = [
+          saleApi.list({ page: 1, limit: 5 }).then((r) => setRecentSales(r.data)),
+        ];
 
-  const recentSales = [
-    { receipt: 'INV-00482', customer: 'James Ndungu', amount: 'KES 3,450', status: 'Paid' },
-    { receipt: 'INV-00481', customer: 'Sunset Homes', amount: 'KES 16,820', status: 'Paid' },
-    { receipt: 'INV-00480', customer: 'Kariuki Tech', amount: 'KES 9,625', status: 'Pending' },
-  ];
+        if (isManager) {
+          tasks.push(
+            reportApi
+              .salesSummary({ period: 'today' })
+              .then((s) => setSummary(s))
+              .catch(() => {}),
+            reportApi
+              .topProducts({ period: 'week', limit: 5 })
+              .then((p) => setTopProducts(p))
+              .catch(() => {}),
+            insightApi
+              .today()
+              .then((i) => {
+                setInsights(i);
+                setLowStock(i.lowStock.length);
+              })
+              .catch(() => {}),
+            productApi
+              .list({ page: 1, limit: 1, active: true })
+              .then((r) => setProductCount(r.meta.total))
+              .catch(() => {})
+          );
+        }
 
-  const tabs: Array<{ id: DashboardPage; label: string }> = [
-    { id: 'sales', label: 'Sales' },
-    { id: 'inventory', label: 'Inventory' },
-    { id: 'customers', label: 'Customers' },
-    { id: 'reports', label: 'Reports' },
-  ];
+        await Promise.all(tasks);
+      } finally {
+        setLoading(false);
+      }
+    };
 
-  const tabContent = {
-    sales: <Sales />,
-    inventory: <Inventory />,
-    customers: <Customers />,
-    reports: <Reports />,
-  };
+    load();
+  }, [isManager]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-24">
+        <Spinner size="lg" />
+      </div>
+    );
+  }
 
   return (
-    <>
-      <section className="dashboard-hero">
-        <div>
-          <p className="eyebrow">Business command center</p>
-          <h1>Good morning, John</h1>
-          <p>Here is what is happening across your business {branch === 'All branches' ? 'today' : `at ${branch}`}.</p>
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="text-2xl font-semibold text-fg truncate">
+            Welcome back, {user?.fullName?.split(' ')[0]}
+          </h1>
+          <p className="text-sm text-muted mt-1 truncate">
+            {tenant?.name} · {formatDateTime(new Date())}
+          </p>
         </div>
-        <div className="dashboard-controls">
-          <select value={range} onChange={(event) => setRange(event.target.value)} aria-label="Dashboard date range"><option>Today</option><option>This week</option><option>This month</option><option>This quarter</option></select>
-          <select value={branch} onChange={(event) => setBranch(event.target.value)} aria-label="Dashboard branch"><option>All branches</option><option>Main Branch</option><option>Industrial Area</option></select>
+        <div className="flex items-center gap-2 shrink-0">
+          <Link to={ROUTES.pos}>
+            <Button icon={<ShoppingCart size={16} />}>Start sale</Button>
+          </Link>
         </div>
-      </section>
+      </div>
 
-      <section className="dashboard-summary-grid">
-        {summary.map((item) => <div className="stat-card" key={item.label}><div className="stat-header"><span>{item.label}</span><span className="trend up">{item.change}</span></div><div className="stat-value">{item.value}</div><div className="stat-footer">Compared with previous period</div></div>)}
-      </section>
+      {/* KPI cards — manager+ only */}
+      {isManager && (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <StatCard
+            label="Sales today"
+            value={summary ? currency(summary.totalSales, curr) : currency(0, curr)}
+            hint={
+              summary
+                ? `${summary.totalTransactions} transaction${summary.totalTransactions === 1 ? '' : 's'}`
+                : 'No sales yet'
+            }
+            icon={<DollarSign size={18} />}
+          />
+          <StatCard
+            label="Top products"
+            value={topProducts.length > 0 ? String(topProducts.length) : '0'}
+            hint="This week"
+            icon={<TrendingUp size={18} />}
+          />
+          <StatCard
+            label="Products"
+            value={productCount.toLocaleString()}
+            hint="Active catalog"
+            icon={<Package size={18} />}
+          />
+          <StatCard
+            label="Low stock"
+            value={lowStock.toLocaleString()}
+            hint={lowStock > 0 ? 'Needs attention' : 'All good'}
+            icon={<AlertTriangle size={18} />}
+          />
+        </div>
+      )}
 
-      <section className="dashboard-diagrams">
-        <div className="panel diagram-panel diagram-wide">
-          <div className="panel-header"><div><p className="eyebrow">Revenue trend</p><h3>Sales vs profit</h3></div><span className="muted-count">{range}</span></div>
-          <div className="diagram-line-chart"><div className="line-grid"><span>200K</span><span>150K</span><span>100K</span><span>50K</span><span>0</span></div><div className="line-chart-area"><svg viewBox="0 0 700 220" role="img" aria-label="Revenue and profit trend"><polyline className="diagram-line revenue-line" points="0,150 115,110 230,132 345,72 460,58 575,98 700,78" /><polyline className="diagram-line profit-line" points="0,184 115,158 230,170 345,132 460,118 575,150 700,134" /></svg><div className="diagram-labels"><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span></div></div></div>
-        </div>
-        <div className="panel diagram-panel">
-          <div className="panel-header"><div><p className="eyebrow">Payments</p><h3>Collection mix</h3></div><span className="muted-count">473 sales</span></div>
-          <div className="donut-layout"><div className="donut-chart"><div><strong>1.04M</strong><span>Total</span></div></div><div className="diagram-legend"><span><i className="legend-swatch mpesa" />M-Pesa <b>48%</b></span><span><i className="legend-swatch cash" />Cash <b>27%</b></span><span><i className="legend-swatch card" />Card <b>16%</b></span><span><i className="legend-swatch credit" />Credit <b>9%</b></span></div></div>
-        </div>
-        <div className="panel diagram-panel">
-          <div className="panel-header"><div><p className="eyebrow">Inventory</p><h3>Stock health</h3></div><span className="status-badge warning">33 alerts</span></div>
-          <div className="health-chart"><div className="health-row"><span>Healthy</span><div><i className="healthy-fill" style={{ width: '76%' }} /></div><strong>76%</strong></div><div className="health-row"><span>Low stock</span><div><i className="low-fill" style={{ width: '18%' }} /></div><strong>18%</strong></div><div className="health-row"><span>Out of stock</span><div><i className="out-fill" style={{ width: '6%' }} /></div><strong>6%</strong></div></div><div className="health-summary"><span><strong>1,268</strong> active SKUs</span><span><strong>24</strong> reorder alerts</span></div>
-        </div>
-        <div className="panel diagram-panel">
-          <div className="panel-header"><div><p className="eyebrow">Branches</p><h3>Performance</h3></div><span className="muted-count">Today</span></div>
-          <div className="branch-chart"><div className="branch-bar-row"><span>Main Branch</span><div><i style={{ width: '88%' }} /></div><strong>184K</strong></div><div className="branch-bar-row"><span>Industrial Area</span><div><i style={{ width: '48%' }} /></div><strong>84K</strong></div><div className="branch-bar-row"><span>Westlands</span><div><i style={{ width: '36%' }} /></div><strong>63K</strong></div></div><p className="diagram-footnote">Main Branch contributes 56% of today's revenue.</p>
-        </div>
-      </section>
-
-      <section className="content-grid main-grid">
-        <div className="panel large-panel">
-          <div className="panel-header">
-            <div>
-              <p className="eyebrow">Performance</p>
-              <h3>Sales overview</h3>
-            </div>
-            <span className="chart-legend"><span><i className="legend-dot revenue-dot" />Revenue</span><span><i className="legend-dot profit-dot" />Profit</span></span>
-          </div>
-          <div className="chart-panel">
-            <div className="chart-grid">
-              {[58, 72, 64, 88, 90, 68, 74].map((value, index) => (
-                <div key={index} className="chart-column-group">
-                  <div className="chart-stack">
-                    <span className="chart-bar revenue" style={{ height: `${value}%` }} />
-                    <span className="chart-bar profit" style={{ height: `${Math.max(22, value - 12)}%` }} />
-                  </div>
-                  <label>{['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][index]}</label>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        <div className="panel">
-          <div className="panel-header">
-            <div>
-              <p className="eyebrow">Inventory</p>
-              <h3>Stock health</h3>
-            </div>
-          </div>
-          <div className="inventory-list">
-            {[
-              ['Inventory value', 'KES 3.84M'],
-              ['Products in stock', '1,268'],
-              ['Low stock', '24'],
-              ['Out of stock', '9'],
-            ].map(([label, value]) => (
-              <div key={label} className="inventory-row">
-                <span>{label}</span>
-                <strong>{value}</strong>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Recent sales */}
+        <div className="lg:col-span-2 space-y-4">
+          <Card
+            title="Recent sales"
+            actions={
+              <Link to={ROUTES.sales}>
+                <Button size="sm" variant="ghost">
+                  View all
+                </Button>
+              </Link>
+            }
+            padded={false}
+          >
+            {recentSales.length === 0 ? (
+              <div className="text-center py-12 text-sm text-muted">
+                No sales yet. Start selling to see activity here.
               </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section className="dashboard-insight-grid">
-        <div className="panel target-panel"><div className="panel-header"><div><p className="eyebrow">Target progress</p><h3>Monthly revenue goal</h3></div><span className="trend up">74%</span></div><div className="target-value"><strong>KES 2.96M</strong><span>of KES 4.00M</span></div><div className="target-track"><i /></div><p>At this pace you are projected to reach target by 27 September.</p></div>
-        <div className="panel"><div className="panel-header"><div><p className="eyebrow">Attention needed</p><h3>Open actions</h3></div><button className="ghost-button small" type="button" onClick={() => setNotice('Alerts center opened')}>View alerts</button></div><div className="dashboard-alert-list"><button type="button" onClick={() => setNotice('Inventory review opened')}><span className="alert-mini warning">!</span><span><strong>24 low-stock products</strong><small>Replenishment recommended</small></span></button><button type="button" onClick={() => setNotice('Collections review opened')}><span className="alert-mini danger">!</span><span><strong>KES 100K overdue</strong><small>Customer balances need follow-up</small></span></button><button type="button" onClick={() => setNotice('Payroll review opened')}><span className="alert-mini info">i</span><span><strong>2 payroll entries pending</strong><small>Review before pay date</small></span></button></div></div>
-      </section>
-
-      <section className="dashboard-tabs panel">
-        <div className="dashboard-tabs-header">
-          <div>
-            <p className="eyebrow">At a glance</p>
-            <h3>Business workspace</h3>
-          </div>
-          <div className="tab-list" role="tablist" aria-label="Dashboard views">
-            {tabs.map((tab) => (
-              <button
-                key={tab.id}
-                className={`dashboard-tab ${activeTab === tab.id ? 'active' : ''}`}
-                onClick={() => {
-                  setActiveTab(tab.id);
-                }}
-                type="button"
-                role="tab"
-                aria-selected={activeTab === tab.id}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div className="dashboard-tab-content">{tabContent[activeTab]}</div>
-      </section>
-
-      <section className="content-grid second-grid">
-        <div className="panel">
-          <div className="panel-header">
-            <div>
-              <p className="eyebrow">Sales</p>
-              <h3>Recent transactions</h3>
-            </div>
-          </div>
-          <div className="table-shell">
-            <table>
-              <thead>
-                <tr>
-                  <th>Receipt</th>
-                  <th>Customer</th>
-                  <th>Amount</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
+            ) : (
+              <ul className="divide-y divide-border">
                 {recentSales.map((sale) => (
-                  <tr key={sale.receipt}>
-                    <td>{sale.receipt}</td>
-                    <td>{sale.customer}</td>
-                    <td>{sale.amount}</td>
-                    <td><span className={`status-badge ${sale.status === 'Paid' ? 'success' : 'warning'}`}>{sale.status}</span></td>
-                  </tr>
+                  <li key={sale._id}>
+                    <Link
+                      to={ROUTES.saleDetail(sale._id)}
+                      className="flex items-center justify-between gap-4 px-5 py-3 hover:bg-elevated transition"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-fg truncate">
+                          {sale.saleNumber}
+                        </p>
+                        <p className="text-xs text-muted">
+                          {sale.items.length} item{sale.items.length === 1 ? '' : 's'} ·{' '}
+                          {relativeTime(sale.createdAt)}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-3 shrink-0">
+                        <Badge variant={sale.voided ? 'danger' : 'success'}>
+                          {sale.voided ? 'voided' : 'paid'}
+                        </Badge>
+                        <span className="text-sm font-semibold text-fg">
+                          {currency(sale.total, sale.currency || curr)}
+                        </span>
+                      </div>
+                    </Link>
+                  </li>
                 ))}
-              </tbody>
-            </table>
-          </div>
+              </ul>
+            )}
+          </Card>
+
+          {/* Top products */}
+          {isManager && topProducts.length > 0 && (
+            <Card title="Top products this week">
+              <ul className="space-y-3">
+                {topProducts.map((p, i) => (
+                  <li key={p._id} className="flex items-center gap-3">
+                    <span className="w-6 h-6 rounded-full bg-brand-50 dark:bg-brand-500/10 text-brand-700 dark:text-brand-300 text-xs font-semibold flex items-center justify-center shrink-0">
+                      {i + 1}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-fg truncate">
+                        {p.name}
+                      </p>
+                      <p className="text-xs text-muted">
+                        {p.qty} sold · {currency(p.revenue, curr)}
+                      </p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          )}
         </div>
 
-        <div className="panel"><div className="panel-header"><div><p className="eyebrow">Product performance</p><h3>Top products</h3></div><button className="ghost-button small" type="button" onClick={() => setActiveTab('inventory')}>Inventory</button></div><div className="top-product-list">{topProducts.map((product, index) => <div className="top-product-row" key={product.name}><span className="product-rank">0{index + 1}</span><div><strong>{product.name}</strong><small>{product.units} units sold</small></div><b>{product.revenue}</b></div>)}</div></div>
+        {/* Sidebar */}
+        <div className="space-y-4">
+          {/* AI insights */}
+          {isManager && insights?.latestMetric && (
+            <Card
+              title="Today's insight"
+              actions={
+                <Link to={ROUTES.insights}>
+                  <Button size="sm" variant="ghost">
+                    Open
+                  </Button>
+                </Link>
+              }
+            >
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 text-sm">
+                  <Sparkles
+                    size={16}
+                    className="text-brand-600 dark:text-brand-400"
+                  />
+                  <span className="font-medium text-fg">
+                    {currency(insights.latestMetric.totalSales, curr)} sales
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-3 text-xs">
+                  <div>
+                    <p className="text-muted">Transactions</p>
+                    <p className="font-semibold text-fg">
+                      {insights.latestMetric.totalTransactions}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-muted">Avg basket</p>
+                    <p className="font-semibold text-fg">
+                      {currency(insights.latestMetric.avgBasket, curr)}
+                    </p>
+                  </div>
+                </div>
+                <Link to={ROUTES.chat}>
+                  <Button size="sm" variant="outline" fullWidth>
+                    Ask AI assistant
+                  </Button>
+                </Link>
+              </div>
+            </Card>
+          )}
 
-        <div className="panel">
-          <div className="panel-header">
-            <div>
-              <p className="eyebrow">Quick actions</p>
-              <h3>Tools</h3>
+          {/* Low stock */}
+          {isManager && insights && insights.lowStock.length > 0 && (
+            <Card
+              title={`Low stock (${insights.lowStock.length})`}
+              actions={
+                <Link to={ROUTES.inventory}>
+                  <Button size="sm" variant="ghost">
+                    View
+                  </Button>
+                </Link>
+              }
+            >
+              <ul className="space-y-2">
+                {insights.lowStock.slice(0, 5).map((p) => (
+                  <li
+                    key={p._id}
+                    className="flex items-center justify-between gap-2 text-sm"
+                  >
+                    <span className="truncate text-fg">{p.name}</span>
+                    <span
+                      className={
+                        p.stock === 0
+                          ? 'text-red-600 dark:text-red-400 font-medium'
+                          : 'text-amber-600 dark:text-amber-400 font-medium'
+                      }
+                    >
+                      {p.stock} left
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          )}
+
+          {/* Quick actions */}
+          <Card title="Quick actions">
+            <div className="space-y-2">
+              <Link to={ROUTES.pos} className="block">
+                <Button variant="outline" fullWidth icon={<ShoppingCart size={14} />}>
+                  New sale
+                </Button>
+              </Link>
+              {isManager && (
+                <>
+                  <Link to={ROUTES.productNew} className="block">
+                    <Button variant="outline" fullWidth icon={<Package size={14} />}>
+                      Add product
+                    </Button>
+                  </Link>
+                  <Link to={ROUTES.customers} className="block">
+                    <Button variant="outline" fullWidth icon={<Users size={14} />}>
+                      Customers
+                    </Button>
+                  </Link>
+                </>
+              )}
             </div>
-          </div>
-          <div className="quick-actions-grid">
-            {['New Sale', 'Add Product', 'Add Customer', 'Record Expense'].map((action) => (
-              <button key={action} type="button" className="quick-action">
-                {action}
-              </button>
-            ))}
-          </div>
+          </Card>
+
+          {/* Cashier hint */}
+          {role === ROLES.CASHIER && (
+            <Card>
+              <p className="text-sm text-muted">
+                You're logged in as a cashier. Tap POS to start selling, or
+                view your sales for today.
+              </p>
+            </Card>
+          )}
         </div>
-      </section>
-      {notice && <div className="pos-notice" role="status">{notice}</div>}
-    </>
+      </div>
+    </div>
   );
 }

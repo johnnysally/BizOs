@@ -13,7 +13,7 @@ export const Input = forwardRef<HTMLInputElement, Props>(function Input(
   return (
     <div className="relative">
       {icon && (
-        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-muted">
           {icon}
         </div>
       )}
@@ -21,13 +21,14 @@ export const Input = forwardRef<HTMLInputElement, Props>(function Input(
         ref={ref}
         className={classNames(
           'block w-full rounded-md border text-sm transition',
+          'bg-surface text-fg',
           'focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-500',
           error
             ? 'border-red-400 focus:border-red-500 focus:ring-red-500/20'
-            : 'border-slate-300',
+            : 'border-border',
           icon ? 'pl-10 pr-3 py-2' : 'px-3 py-2',
-          'disabled:bg-slate-50 disabled:text-slate-500 disabled:cursor-not-allowed',
-          'placeholder:text-slate-400',
+          'disabled:bg-elevated disabled:text-muted disabled:cursor-not-allowed',
+          'placeholder:text-muted/70',
           className
         )}
         {...rest}

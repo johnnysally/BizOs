@@ -1,11 +1,11 @@
 export const formatCurrency = (
   amount: number,
-  currency = 'KES',
+  currencyCode = 'KES',
   locale = 'en-KE'
 ) =>
   new Intl.NumberFormat(locale, {
     style: 'currency',
-    currency,
+    currency: currencyCode,
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(Number(amount) || 0);
@@ -21,3 +21,5 @@ export const roundMoney = (n: number) =>
 
 export const sumMoney = (arr: number[]) =>
   roundMoney(arr.reduce((sum, n) => sum + (Number(n) || 0), 0));
+
+export const currency = formatCurrency;

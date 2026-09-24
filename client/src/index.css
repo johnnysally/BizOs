@@ -3,6 +3,26 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    --bg:       248 250 252;   /* slate-50  */
+    --surface:  255 255 255;   /* white     */
+    --elevated: 255 255 255;
+    --border:   226 232 240;   /* slate-200 */
+    --fg:        15  23  42;   /* slate-900 */
+    --muted:    100 116 139;   /* slate-500 */
+    color-scheme: light;
+  }
+
+  .dark {
+    --bg:        2   6  23;    /* slate-950 */
+    --surface:  15  23  42;    /* slate-900 */
+    --elevated: 30  41  59;    /* slate-800 */
+    --border:   30  41  59;    /* slate-800 */
+    --fg:      241 245 249;    /* slate-100 */
+    --muted:   148 163 184;    /* slate-400 */
+    color-scheme: dark;
+  }
+
   html {
     -webkit-text-size-adjust: 100%;
     -webkit-tap-highlight-color: transparent;
@@ -10,22 +30,19 @@
   }
 
   body {
-    @apply bg-slate-50 text-slate-900 antialiased;
+    @apply bg-bg text-fg antialiased;
     font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
   }
 
   * {
-    @apply border-slate-200;
+    @apply border-border;
   }
 
   ::selection {
     @apply bg-brand-100 text-brand-900;
   }
 
-  input,
-  textarea,
-  select,
-  button {
+  input, textarea, select, button {
     font: inherit;
   }
 }
@@ -33,33 +50,16 @@
 @layer utilities {
   .scrollbar-thin {
     scrollbar-width: thin;
-    scrollbar-color: theme('colors.slate.300') transparent;
+    scrollbar-color: theme('colors.slate.400 / 50%') transparent;
   }
+  .scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+  .scrollbar-thin::-webkit-scrollbar-thumb { @apply bg-slate-400/50 rounded-full; }
+  .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
 
-  .scrollbar-thin::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
-  }
-
-  .scrollbar-thin::-webkit-scrollbar-thumb {
-    @apply bg-slate-300 rounded-full;
-  }
-
-  .scrollbar-thin::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  .scrollbar-none {
-    scrollbar-width: none;
-  }
-
-  .scrollbar-none::-webkit-scrollbar {
-    display: none;
-  }
+  .scrollbar-none { scrollbar-width: none; }
+  .scrollbar-none::-webkit-scrollbar { display: none; }
 }
 
 @media print {
-  .print\:hidden {
-    display: none !important;
-  }
+  .print\:hidden { display: none !important; }
 }

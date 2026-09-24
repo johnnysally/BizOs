@@ -2,6 +2,7 @@ import {
   createContext,
   useContext,
   useEffect,
+  useRef,
   useState,
   ReactNode,
 } from 'react';
@@ -48,14 +49,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [tenant, setTenant] = useState<Tenant | null>(null);
   const [plan, setPlan] = useState<Plan | null>(null);
   const [invoice, setInvoice] = useState<LatestInvoice | null>(null);
-  const [accessToken, setAccessToken] = useState<string | null>(null);
+  const [accessToken, setAccessTokenState] = useState<string | null>(null);
   const [scope, setScope] = useState<AuthScope | null>(null);
   const [status, setStatus] = useState<Status>('idle');
   const [error, setError] = useState<string | null>(null);
 
+  const tokenRef = useRef<string | null>(null);
+
+  const setAccessToken = (token: string | null) => {
+    tokenRef.current = token;
+    setAccessTokenState(token);
+  };
+
   useEffect(() => {
-    setTokenGetter(() => accessToken);
-  }, [accessToken]);
+    setTokenGetter(() => tokenRef.current);
+  }, []);
 
   useEffect(() => {
     setOnTokenRefreshed((token) => setAccessToken(token));

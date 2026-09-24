@@ -47,20 +47,20 @@ export function Table<T extends Record<string, unknown>>({
   return (
     <div
       className={classNames(
-        'bg-white border border-slate-200 rounded-lg overflow-hidden',
+        'bg-surface border border-border rounded-lg overflow-hidden',
         className
       )}
     >
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
-          <thead className="bg-slate-50 border-b border-slate-200">
+          <thead className="bg-elevated border-b border-border">
             <tr>
               {columns.map((c) => (
                 <th
                   key={c.key}
                   style={c.width ? { width: c.width } : undefined}
                   className={classNames(
-                    'px-4 py-3 font-medium text-slate-600 text-left whitespace-nowrap',
+                    'px-4 py-3 font-medium text-muted text-left whitespace-nowrap',
                     c.align === 'right' && 'text-right',
                     c.align === 'center' && 'text-center',
                     c.className
@@ -71,7 +71,7 @@ export function Table<T extends Record<string, unknown>>({
               ))}
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100">
+          <tbody className="divide-y divide-border">
             {loading ? (
               <tr>
                 <td colSpan={columns.length} className="px-4 py-12 text-center">
@@ -92,7 +92,7 @@ export function Table<T extends Record<string, unknown>>({
                   key={rowKey ? rowKey(row) : ((row._id as string) || i)}
                   onClick={onRowClick ? () => onRowClick(row) : undefined}
                   className={classNames(
-                    'hover:bg-slate-50 transition',
+                    'hover:bg-elevated transition',
                     onRowClick && 'cursor-pointer'
                   )}
                 >
@@ -100,7 +100,7 @@ export function Table<T extends Record<string, unknown>>({
                     <td
                       key={c.key}
                       className={classNames(
-                        'px-4 py-3 text-slate-700',
+                        'px-4 py-3 text-fg',
                         c.align === 'right' && 'text-right',
                         c.align === 'center' && 'text-center',
                         c.className
@@ -117,15 +117,15 @@ export function Table<T extends Record<string, unknown>>({
       </div>
 
       {pagination && pagination.total > 0 && (
-        <div className="flex items-center justify-between px-4 py-3 border-t border-slate-200 bg-slate-50 text-sm">
-          <span className="text-slate-500">
+        <div className="flex items-center justify-between px-4 py-3 border-t border-border bg-elevated text-sm">
+          <span className="text-muted">
             Page {pagination.page} of {totalPages} · {pagination.total} total
           </span>
           <div className="flex items-center gap-1">
             <button
               onClick={() => pagination.onChange(Math.max(1, pagination.page - 1))}
               disabled={pagination.page <= 1}
-              className="px-3 py-1 rounded border border-slate-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-white"
+              className="px-3 py-1 rounded border border-border text-fg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-surface"
               type="button"
             >
               Prev
@@ -135,7 +135,7 @@ export function Table<T extends Record<string, unknown>>({
                 pagination.onChange(Math.min(totalPages, pagination.page + 1))
               }
               disabled={pagination.page >= totalPages}
-              className="px-3 py-1 rounded border border-slate-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-white"
+              className="px-3 py-1 rounded border border-border text-fg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-surface"
               type="button"
             >
               Next
