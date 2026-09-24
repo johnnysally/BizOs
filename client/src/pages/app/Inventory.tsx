@@ -1,237 +1,502 @@
-﻿import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Search, Plus, Minus, History as HistoryIcon, Boxes } from 'lucide-react';
+import { Card } from '@/components/ui/Card';
+import { Button } from '@/components/ui/Button';
+import { Input } from '@/components/ui/Input';
+import { Select } from '@/components/ui/Select';
+import { FormField } from '@/components/ui/FormField';
+import { Modal } from '@/components/ui/Modal';
+import { Badge } from '@/components/ui/Badge';
+import { Spinner } from '@/components/ui/Spinner';
+import { classNames } from '@/utils/classNames';
+import { useNotifications } from '@/context/NotificationContext';
+import { inventoryApi } from '@/api/inventory';
+import { formatCurrency } from '@/utils/currency';
+import { relativeTime } from '@/utils/date';
+import type { Product } from '@/types/product';
+import type { InventoryMovement } from '@/types/inventory';
 
-type StockStatus = 'Healthy' | 'Low stock' | 'Out of stock';
-type InventoryView = 'all' | 'low' | 'out';
-type AdvancedTool = 'transfer' | 'count' | 'reorder' | null;
+const PAGE_SIZE = 20;
 
-type StockItem = {
-  sku: string;
-  name: string;
-  category: string;
-  location: string;
-  quantity: number;
-  reorderLevel: number;
-  value: string;
-  status: StockStatus;
+type View = 'all' | 'low' | 'out';
+
+function stockStatus(p: Product): 'healthy' | 'low' | 'out' {
+  if (p.stock === 0) return 'out';
+  if (p.stock <= p.lowStockThreshold) return 'low';
+  return 'healthy';
+}
+
+const STATUS_VARIANT = {
+  healthy: 'success',
+  low: 'warning',
+  out: 'danger',
+} as const;
+
+const STATUS_LABEL = {
+  healthy: 'Healthy',
+  low: 'Low stock',
+  out: 'Out of stock',
+} as const;
+
+const MOVEMENT_LABEL: Record<InventoryMovement['type'], string> = {
+  in: 'Stock received',
+  out: 'Stock issued',
+  adjustment: 'Adjustment',
+  purchase: 'Purchase',
+  purchase_return: 'Purchase return',
+  invoice: 'Invoice',
+  invoice_return: 'Invoice return',
+  sale: 'Sale',
+  sale_return: 'Sale return',
 };
 
-const initialStock: StockItem[] = [
-  { sku: 'CAB-2.5-TW', name: '2.5mm Twin Cable', category: 'Cables', location: 'Main Branch', quantity: 12, reorderLevel: 20, value: 'KES 102,000', status: 'Low stock' },
-  { sku: 'SOC-13A-D', name: '13A Double Socket', category: 'Sockets', location: 'Main Branch', quantity: 38, reorderLevel: 15, value: 'KES 17,100', status: 'Healthy' },
-  { sku: 'BRK-20A', name: '20A MCB', category: 'Breakers', location: 'Industrial Area', quantity: 7, reorderLevel: 10, value: 'KES 4,550', status: 'Low stock' },
-  { sku: 'LGT-12W', name: 'LED Bulb 12W', category: 'Lighting', location: 'Main Branch', quantity: 42, reorderLevel: 20, value: 'KES 13,440', status: 'Healthy' },
-  { sku: 'FAN-16-ST', name: '16-inch Stand Fan', category: 'Appliances', location: 'Industrial Area', quantity: 0, reorderLevel: 5, value: 'KES 0', status: 'Out of stock' },
-  { sku: 'PNT-WHT-20', name: 'Interior Wall Paint 20L', category: 'Finishes', location: 'Main Branch', quantity: 18, reorderLevel: 12, value: 'KES 81,000', status: 'Healthy' },
-];
+export default function Inventory() {
+  const { toast } = useNotifications();
 
-const movements = [
-  { reference: 'GRN-2048', product: '13A Double Socket', type: 'Stock received', quantity: '+24', user: 'Alice', time: 'Today, 09:42' },
-  { reference: 'SAL-4402', product: '2.5mm Twin Cable', type: 'Sale deduction', quantity: '-6', user: 'John', time: 'Today, 09:18' },
-  { reference: 'ADJ-0182', product: '20A MCB', type: 'Stock adjustment', quantity: '-2', user: 'Peter', time: 'Yesterday, 16:05' },
-];
+  const [items, setItems] = useState<Product[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [loading, setLoading] = useState(true);
 
-const getStockStatus = (quantity: number, reorderLevel: number): StockStatus => {
-  if (quantity === 0) return 'Out of stock';
-  if (quantity <= reorderLevel) return 'Low stock';
-  return 'Healthy';
-};
-
-export function Inventory() {
-  const [stock, setStock] = useState(initialStock);
   const [search, setSearch] = useState('');
-  const [category, setCategory] = useState('All categories');
-  const [location, setLocation] = useState('All locations');
-  const [view, setView] = useState<InventoryView>('all');
-  const [showAdjustment, setShowAdjustment] = useState(false);
-  const [adjustmentSku, setAdjustmentSku] = useState(initialStock[0].sku);
-  const [adjustmentQuantity, setAdjustmentQuantity] = useState('');
-  const [advancedTool, setAdvancedTool] = useState<AdvancedTool>(null);
-  const [transferSku, setTransferSku] = useState(initialStock[0].sku);
-  const [transferQuantity, setTransferQuantity] = useState('');
-  const [transferDestination, setTransferDestination] = useState('Industrial Area');
-  const [countSku, setCountSku] = useState(initialStock[0].sku);
-  const [countQuantity, setCountQuantity] = useState('');
-  const [reorderSku, setReorderSku] = useState(initialStock[0].sku);
-  const [reorderQuantity, setReorderQuantity] = useState(String(initialStock[0].reorderLevel));
-  const [operationMessage, setOperationMessage] = useState('');
-  const locations = ['All locations', ...new Set(stock.map((item) => item.location))];
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [view, setView] = useState<View>('all');
 
-  const categories = ['All categories', ...new Set(stock.map((item) => item.category))];
-  const filteredStock = useMemo(() => stock.filter((item) => {
-    const matchesSearch = `${item.name} ${item.sku} ${item.location}`.toLowerCase().includes(search.toLowerCase());
-    const matchesCategory = category === 'All categories' || item.category === category;
-    const matchesLocation = location === 'All locations' || item.location === location;
-    const matchesView = view === 'all' || (view === 'low' && item.status === 'Low stock') || (view === 'out' && item.status === 'Out of stock');
-    return matchesSearch && matchesCategory && matchesLocation && matchesView;
-  }), [category, location, search, stock, view]);
+  const [adjusting, setAdjusting] = useState<Product | null>(null);
+  const [historyFor, setHistoryFor] = useState<Product | null>(null);
 
-  const lowStockCount = stock.filter((item) => item.status === 'Low stock').length;
-  const outOfStockCount = stock.filter((item) => item.status === 'Out of stock').length;
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setDebouncedSearch(search);
+      setPage(1);
+    }, 300);
+    return () => clearTimeout(t);
+  }, [search]);
 
-  const adjustStock = () => {
-    const amount = Number(adjustmentQuantity);
-    if (!Number.isFinite(amount) || amount === 0) return;
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await inventoryApi.list({
+        page,
+        limit: PAGE_SIZE,
+        lowStock: view === 'low' ? true : undefined,
+        search: debouncedSearch || undefined,
+      });
+      setItems(res.data);
+      setTotal(res.meta.total);
+    } catch (e) {
+      toast({
+        type: 'error',
+        message: (e as { message?: string }).message || 'Could not load inventory',
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, [page, debouncedSearch, view, toast]);
 
-    setStock((current) => current.map((item) => {
-      if (item.sku !== adjustmentSku) return item;
-      const quantity = Math.max(0, item.quantity + amount);
-      const status = getStockStatus(quantity, item.reorderLevel);
-      return { ...item, quantity, status };
-    }));
-    setAdjustmentQuantity('');
-    setShowAdjustment(false);
-    setOperationMessage('Stock adjustment applied');
-  };
+  useEffect(() => {
+    load();
+  }, [load]);
 
-  const completeTransfer = () => {
-    const amount = Number(transferQuantity);
-    const product = stock.find((item) => item.sku === transferSku);
-    if (!product || !Number.isFinite(amount) || amount <= 0 || amount > product.quantity) return;
-    setStock((current) => current.map((item) => item.sku === transferSku
-      ? { ...item, quantity: item.quantity - amount, status: getStockStatus(item.quantity - amount, item.reorderLevel) }
-      : item));
-    setOperationMessage(`${amount} units of ${product.name} transferred to ${transferDestination}.`);
-    setTransferQuantity('');
-  };
+  const visible = useMemo(() => {
+    if (view === 'out') return items.filter((p) => p.stock === 0);
+    return items;
+  }, [items, view]);
 
-  const completeCount = () => {
-    const amount = Number(countQuantity);
-    if (!Number.isFinite(amount) || amount < 0) return;
-    setStock((current) => current.map((item) => item.sku === countSku
-      ? { ...item, quantity: amount, status: getStockStatus(amount, item.reorderLevel) }
-      : item));
-    const product = stock.find((item) => item.sku === countSku);
-    setOperationMessage(`${product?.name ?? 'Product'} cycle count saved at ${amount} units.`);
-    setCountQuantity('');
-  };
+  const stats = useMemo(() => {
+    const lowCount = items.filter((p) => stockStatus(p) === 'low').length;
+    const outCount = items.filter((p) => p.stock === 0).length;
+    const value = items.reduce((sum, p) => sum + p.cost * p.stock, 0);
+    return { lowCount, outCount, value };
+  }, [items]);
 
-  const saveReorderLevel = () => {
-    const amount = Number(reorderQuantity);
-    if (!Number.isFinite(amount) || amount < 0) return;
-    setStock((current) => current.map((item) => item.sku === reorderSku
-      ? { ...item, reorderLevel: amount, status: getStockStatus(item.quantity, amount) }
-      : item));
-    const product = stock.find((item) => item.sku === reorderSku);
-    setOperationMessage(`${product?.name ?? 'Product'} reorder point set to ${amount} units.`);
-  };
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
-  const exportValuation = () => {
-    const csv = [['SKU', 'Product', 'Category', 'Location', 'Quantity', 'Reorder level', 'Status'], ...stock.map((item) => [item.sku, item.name, item.category, item.location, String(item.quantity), String(item.reorderLevel), item.status])].map((row) => row.join(',')).join('\n');
-    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
-    const link = document.createElement('a'); link.href = url; link.download = 'bizos-inventory-valuation.csv'; link.click(); URL.revokeObjectURL(url);
-    setOperationMessage('Inventory valuation exported');
+  return (
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-4">
+      <div>
+        <h1 className="text-2xl font-semibold text-fg">Inventory</h1>
+        <p className="text-sm text-muted mt-1">
+          Stock levels, adjustments, and movement history.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <KPI label="Stock value" value={formatCurrency(stats.value)} hint="At cost" />
+        <KPI label="Products" value={String(total)} hint="In this view" />
+        <KPI label="Low stock" value={String(stats.lowCount)} hint="Below reorder" />
+        <KPI label="Out of stock" value={String(stats.outCount)} hint="Needs action" />
+      </div>
+
+      <Card padded={false}>
+        <div className="flex flex-col sm:flex-row gap-2 p-4 border-b border-border">
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search name or SKU..."
+            icon={<Search size={14} />}
+          />
+          <div className="flex gap-1">
+            {(['all', 'low', 'out'] as View[]).map((v) => (
+              <button
+                key={v}
+                type="button"
+                onClick={() => {
+                  setView(v);
+                  setPage(1);
+                }}
+                className={classNames(
+                  'px-3 py-2 rounded-md text-sm font-medium transition whitespace-nowrap',
+                  view === v
+                    ? 'bg-brand-600 text-white'
+                    : 'bg-elevated text-muted hover:text-fg'
+                )}
+              >
+                {v === 'all' ? 'All stock' : v === 'low' ? 'Low stock' : 'Out of stock'}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-elevated border-b border-border">
+              <tr>
+                <th className="px-4 py-3 text-left font-medium text-muted">Product</th>
+                <th className="px-4 py-3 text-left font-medium text-muted">Location</th>
+                <th className="px-4 py-3 text-right font-medium text-muted">On hand</th>
+                <th className="px-4 py-3 text-right font-medium text-muted">Reorder at</th>
+                <th className="px-4 py-3 text-right font-medium text-muted">Value</th>
+                <th className="px-4 py-3 text-left font-medium text-muted">Status</th>
+                <th className="px-4 py-3 text-right font-medium text-muted">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {loading ? (
+                <tr>
+                  <td colSpan={7} className="px-4 py-16 text-center">
+                    <Spinner />
+                  </td>
+                </tr>
+              ) : visible.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-4 py-16 text-center text-muted">
+                    <Boxes size={32} className="mx-auto mb-2 opacity-40" />
+                    No products in this view.
+                  </td>
+                </tr>
+              ) : (
+                visible.map((p) => {
+                  const s = stockStatus(p);
+                  return (
+                    <tr key={p._id} className="hover:bg-elevated transition">
+                      <td className="px-4 py-3">
+                        <p className="font-medium text-fg">{p.name}</p>
+                        <p className="text-xs text-muted mt-0.5">{p.sku || '—'}</p>
+                      </td>
+                      <td className="px-4 py-3 text-muted">
+                        {p.location || '—'}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <span className="font-semibold text-fg">{p.stock}</span>
+                      </td>
+                      <td className="px-4 py-3 text-right text-muted">
+                        {p.lowStockThreshold}
+                      </td>
+                      <td className="px-4 py-3 text-right text-fg">
+                        {formatCurrency(p.cost * p.stock)}
+                      </td>
+                      <td className="px-4 py-3">
+                        <Badge variant={STATUS_VARIANT[s]}>{STATUS_LABEL[s]}</Badge>
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="inline-flex items-center gap-1">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            icon={<Plus size={12} />}
+                            onClick={() => setAdjusting(p)}
+                          >
+                            Adjust
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            icon={<HistoryIcon size={12} />}
+                            onClick={() => setHistoryFor(p)}
+                          >
+                            History
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between px-4 py-3 border-t border-border bg-elevated text-sm">
+            <span className="text-muted">
+              Page {page} of {totalPages} · {total} total
+            </span>
+            <div className="flex gap-1">
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={page <= 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+              >
+                Prev
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={page >= totalPages}
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              >
+                Next
+              </Button>
+            </div>
+          </div>
+        )}
+      </Card>
+
+      {adjusting && (
+        <AdjustModal
+          product={adjusting}
+          onClose={() => setAdjusting(null)}
+          onSaved={() => {
+            setAdjusting(null);
+            load();
+          }}
+        />
+      )}
+
+      {historyFor && (
+        <HistoryDrawer
+          product={historyFor}
+          onClose={() => setHistoryFor(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function KPI({ label, value, hint }: { label: string; value: string; hint: string }) {
+  return (
+    <div className="bg-surface border border-border rounded-lg p-4">
+      <p className="text-xs text-muted">{label}</p>
+      <p className="text-xl font-semibold text-fg mt-1 truncate">{value}</p>
+      <p className="text-xs text-muted mt-1">{hint}</p>
+    </div>
+  );
+}
+
+function AdjustModal({
+  product,
+  onClose,
+  onSaved,
+}: {
+  product: Product;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const { toast } = useNotifications();
+  const [mode, setMode] = useState<'add' | 'remove'>('add');
+  const [qty, setQty] = useState('1');
+  const [reason, setReason] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const submit = async () => {
+    const n = Number(qty);
+    if (!Number.isFinite(n) || n <= 0) {
+      toast({ type: 'error', message: 'Enter a positive number' });
+      return;
+    }
+    const delta = mode === 'add' ? n : -n;
+    if (product.stock + delta < 0) {
+      toast({ type: 'error', message: 'Stock cannot go below zero' });
+      return;
+    }
+    setSaving(true);
+    try {
+      await inventoryApi.adjust({
+        productId: product._id,
+        qty: delta,
+        reason: reason || (mode === 'add' ? 'Stock added' : 'Stock removed'),
+      });
+      toast({ type: 'success', message: 'Stock adjusted' });
+      onSaved();
+    } catch (e) {
+      toast({
+        type: 'error',
+        message: (e as { message?: string }).message || 'Adjust failed',
+      });
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
-    <div className="inventory-workspace">
-      <div className="panel">
-        <div className="panel-header">
-          <div>
-            <p className="eyebrow">Inventory control</p>
-            <h3>Stock overview</h3>
-            <p className="panel-subtitle">Monitor quantities, reorder points, and stock movement across your branches.</p>
-          </div>
-            <div className="inventory-heading-actions"><button className="secondary-button small" type="button" onClick={exportValuation}>Export valuation</button><button className="primary-button small" type="button" onClick={() => setShowAdjustment((current) => !current)}>
-            {showAdjustment ? 'Close adjustment' : 'Adjust stock'}
-          </button></div>
+    <Modal
+      open
+      onClose={onClose}
+      title={`Adjust ${product.name}`}
+      footer={
+        <>
+          <Button variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button loading={saving} onClick={submit}>
+            Apply
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <div className="bg-elevated rounded-md px-3 py-2 text-sm">
+          <span className="text-muted">Current stock:</span>{' '}
+          <span className="font-semibold text-fg">{product.stock}</span>
         </div>
 
-        <div className="stats-row four-col inventory-stats">
-          <div className="stat-card compact"><div className="stat-header"><span>Inventory value</span><span className="trend up">+8.4%</span></div><div className="stat-value">KES 3.84M</div><div className="stat-footer">Across 2 branches</div></div>
-          <div className="stat-card compact"><div className="stat-header"><span>Active SKUs</span></div><div className="stat-value">1,268</div><div className="stat-footer">96% currently stocked</div></div>
-          <div className="stat-card compact"><div className="stat-header"><span>Low stock</span><span className="trend down">Action</span></div><div className="stat-value">{lowStockCount}</div><div className="stat-footer">Below reorder level</div></div>
-          <div className="stat-card compact"><div className="stat-header"><span>Out of stock</span></div><div className="stat-value">{outOfStockCount}</div><div className="stat-footer">Needs replenishment</div></div>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => setMode('add')}
+            className={classNames(
+              'flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-md border text-sm font-medium transition',
+              mode === 'add'
+                ? 'border-brand-500 bg-brand-50 text-brand-700 dark:bg-brand-500/10 dark:text-brand-300'
+                : 'border-border bg-surface text-muted hover:bg-elevated'
+            )}
+          >
+            <Plus size={14} />
+            Add
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode('remove')}
+            className={classNames(
+              'flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-md border text-sm font-medium transition',
+              mode === 'remove'
+                ? 'border-brand-500 bg-brand-50 text-brand-700 dark:bg-brand-500/10 dark:text-brand-300'
+                : 'border-border bg-surface text-muted hover:bg-elevated'
+            )}
+          >
+            <Minus size={14} />
+            Remove
+          </button>
         </div>
 
-        <div className="inventory-advanced-tools">
-          <button className={`tool-card ${advancedTool === 'transfer' ? 'active' : ''}`} type="button" onClick={() => setAdvancedTool(advancedTool === 'transfer' ? null : 'transfer')}><strong>Transfer stock</strong><span>Move units between branches</span></button>
-          <button className={`tool-card ${advancedTool === 'count' ? 'active' : ''}`} type="button" onClick={() => setAdvancedTool(advancedTool === 'count' ? null : 'count')}><strong>Cycle count</strong><span>Reconcile a physical count</span></button>
-          <button className={`tool-card ${advancedTool === 'reorder' ? 'active' : ''}`} type="button" onClick={() => setAdvancedTool(advancedTool === 'reorder' ? null : 'reorder')}><strong>Reorder rules</strong><span>Set product thresholds</span></button>
-        </div>
+        <FormField label="Quantity">
+          <Input
+            type="number"
+            min="1"
+            value={qty}
+            onChange={(e) => setQty(e.target.value)}
+          />
+        </FormField>
 
-        {advancedTool && (
-          <div className="advanced-operation-panel">
-            {advancedTool === 'transfer' && <>
-              <div><strong>Transfer inventory</strong><span>Record an internal branch movement.</span></div>
-              <select value={transferSku} onChange={(event) => setTransferSku(event.target.value)} aria-label="Transfer product">{stock.map((item) => <option key={item.sku} value={item.sku}>{item.name} · {item.quantity} available</option>)}</select>
-              <input type="number" min="1" value={transferQuantity} onChange={(event) => setTransferQuantity(event.target.value)} placeholder="Units" aria-label="Transfer quantity" />
-              <select value={transferDestination} onChange={(event) => setTransferDestination(event.target.value)} aria-label="Transfer destination"><option>Main Branch</option><option>Industrial Area</option><option>Warehouse</option></select>
-              <button className="secondary-button small" type="button" onClick={completeTransfer}>Transfer</button>
-            </>}
-            {advancedTool === 'count' && <>
-              <div><strong>Cycle count</strong><span>Replace the system quantity with a verified count.</span></div>
-              <select value={countSku} onChange={(event) => setCountSku(event.target.value)} aria-label="Count product">{stock.map((item) => <option key={item.sku} value={item.sku}>{item.name} · {item.location}</option>)}</select>
-              <input type="number" min="0" value={countQuantity} onChange={(event) => setCountQuantity(event.target.value)} placeholder="Counted units" aria-label="Counted units" />
-              <button className="secondary-button small" type="button" onClick={completeCount}>Save count</button>
-            </>}
-            {advancedTool === 'reorder' && <>
-              <div><strong>Reorder rule</strong><span>Alert when stock reaches this threshold.</span></div>
-              <select value={reorderSku} onChange={(event) => { setReorderSku(event.target.value); const product = stock.find((item) => item.sku === event.target.value); setReorderQuantity(String(product?.reorderLevel ?? 0)); }} aria-label="Reorder product">{stock.map((item) => <option key={item.sku} value={item.sku}>{item.name}</option>)}</select>
-              <input type="number" min="0" value={reorderQuantity} onChange={(event) => setReorderQuantity(event.target.value)} placeholder="Units" aria-label="Reorder threshold" />
-              <button className="secondary-button small" type="button" onClick={saveReorderLevel}>Save rule</button>
-            </>}
-          </div>
-        )}
-        {operationMessage && <div className="operation-message" role="status">{operationMessage}</div>}
+        <FormField label="Reason">
+          <Input
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder={mode === 'add' ? 'Delivery received' : 'Damaged goods'}
+          />
+        </FormField>
 
-        {showAdjustment && (
-          <div className="adjustment-panel">
-            <div><strong>Quick stock adjustment</strong><span>Add or remove units from a branch count.</span></div>
-            <select value={adjustmentSku} onChange={(event) => setAdjustmentSku(event.target.value)} aria-label="Product to adjust">
-              {stock.map((item) => <option key={item.sku} value={item.sku}>{item.name} · {item.location}</option>)}
-            </select>
-            <input type="number" value={adjustmentQuantity} onChange={(event) => setAdjustmentQuantity(event.target.value)} placeholder="+/- units" aria-label="Adjustment quantity" />
-            <button className="secondary-button small" type="button" onClick={adjustStock}>Apply</button>
-          </div>
-        )}
+        <p className="text-xs text-muted">
+          New balance will be{' '}
+          <span className="font-medium text-fg">
+            {product.stock + (mode === 'add' ? Number(qty) || 0 : -(Number(qty) || 0))}
+          </span>
+          .
+        </p>
       </div>
+    </Modal>
+  );
+}
 
-      <div className="content-grid inventory-grid">
-        <div className="panel">
-          <div className="panel-header">
-            <div><p className="eyebrow">Stock ledger</p><h3>Product quantities</h3></div>
-            <span className="muted-count">{filteredStock.length} products</span>
-          </div>
+function HistoryDrawer({
+  product,
+  onClose,
+}: {
+  product: Product;
+  onClose: () => void;
+}) {
+  const { toast } = useNotifications();
+  const [items, setItems] = useState<InventoryMovement[]>([]);
+  const [loading, setLoading] = useState(true);
 
-          <div className="inventory-toolbar">
-            <label className="search-field"><span>Search</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search name, SKU, branch..." /></label>
-            <select value={category} onChange={(event) => setCategory(event.target.value)} aria-label="Filter by category">
-              {categories.map((item) => <option key={item}>{item}</option>)}
-            </select>
-            <select value={location} onChange={(event) => setLocation(event.target.value)} aria-label="Filter by location">
-              {locations.map((item) => <option key={item}>{item}</option>)}
-            </select>
-          </div>
-          <div className="inventory-view-tabs" role="tablist" aria-label="Stock status">
-            {([['all', 'All stock'], ['low', 'Low stock'], ['out', 'Out of stock']] as Array<[InventoryView, string]>).map(([id, label]) => (
-              <button key={id} className={`chip ${view === id ? 'active' : ''}`} onClick={() => setView(id)} type="button" role="tab" aria-selected={view === id}>{label}</button>
-            ))}
-          </div>
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    inventoryApi
+      .history(product._id, { page: 1, limit: 50 })
+      .then((res) => {
+        if (!active) return;
+        setItems(res.data);
+      })
+      .catch(() => {
+        if (!active) return;
+        toast({ type: 'error', message: 'Could not load history' });
+      })
+      .finally(() => active && setLoading(false));
+    return () => {
+      active = false;
+    };
+  }, [product._id, toast]);
 
-          <div className="table-shell inventory-table">
-            <table>
-              <thead><tr><th>Product</th><th>Category</th><th>Location</th><th>On hand</th><th>Reorder at</th><th>Value</th><th>Status</th></tr></thead>
-              <tbody>
-                {filteredStock.map((item) => (
-                  <tr key={item.sku}>
-                    <td><strong>{item.name}</strong><small className="table-secondary">{item.sku}</small></td>
-                    <td>{item.category}</td><td>{item.location}</td><td><strong>{item.quantity}</strong></td><td>{item.reorderLevel}</td><td>{item.value}</td>
-                    <td><span className={`status-badge ${item.status === 'Healthy' ? 'success' : item.status === 'Low stock' ? 'warning' : 'danger'}`}>{item.status}</span></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+  return (
+    <Modal open onClose={onClose} title={`${product.name} — Movement history`} size="lg">
+      {loading ? (
+        <div className="flex justify-center py-12">
+          <Spinner />
         </div>
-
-        <div className="panel">
-          <div className="panel-header"><div><p className="eyebrow">Audit trail</p><h3>Recent movements</h3></div><button className="ghost-button small" type="button">View all</button></div>
-          <div className="movement-list">
-            {movements.map((movement) => <div className="movement-row" key={movement.reference}><div><strong>{movement.product}</strong><span>{movement.type} · {movement.reference}</span></div><div className="movement-meta"><strong className={movement.quantity.startsWith('+') ? 'positive' : 'negative'}>{movement.quantity}</strong><span>{movement.time}</span></div></div>)}
-          </div>
-          <div className="inventory-note"><strong>Replenishment tip</strong><span>2 products need a purchase order to maintain this week's sales pace.</span></div>
-        </div>
-      </div>
-    </div>
+      ) : items.length === 0 ? (
+        <p className="text-sm text-muted py-8 text-center">
+          No movements recorded yet.
+        </p>
+      ) : (
+        <ul className="divide-y divide-border -mx-5">
+          {items.map((m) => {
+            const positive = m.qty > 0;
+            return (
+              <li key={m._id} className="flex items-center justify-between gap-4 px-5 py-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-fg">
+                    {MOVEMENT_LABEL[m.type] || m.type}
+                  </p>
+                  <p className="text-xs text-muted mt-0.5">
+                    {m.reason || 'No reason'} · {relativeTime(m.createdAt)}
+                  </p>
+                </div>
+                <div className="text-right shrink-0">
+                  <p
+                    className={classNames(
+                      'text-sm font-semibold',
+                      positive
+                        ? 'text-green-600 dark:text-green-400'
+                        : 'text-red-600 dark:text-red-400'
+                    )}
+                  >
+                    {positive ? '+' : ''}
+                    {m.qty}
+                  </p>
+                  {m.balanceAfter != null && (
+                    <p className="text-xs text-muted mt-0.5">
+                      Balance: {m.balanceAfter}
+                    </p>
+                  )}
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </Modal>
   );
 }

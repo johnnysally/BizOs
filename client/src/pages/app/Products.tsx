@@ -1,58 +1,588 @@
-import { useEffect, useMemo, useState } from 'react';
-import { productApi } from '../../api/products';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Plus, Search, Archive, Package, Image as ImageIcon } from 'lucide-react';
+import { Card } from '@/components/ui/Card';
+import { Button } from '@/components/ui/Button';
+import { Input } from '@/components/ui/Input';
+import { Select } from '@/components/ui/Select';
+import { FormField } from '@/components/ui/FormField';
+import { Modal } from '@/components/ui/Modal';
+import { Badge } from '@/components/ui/Badge';
+import { Spinner } from '@/components/ui/Spinner';
+import { useNotifications } from '@/context/NotificationContext';
+import { productApi } from '@/api/products';
+import { formatCurrency } from '@/utils/currency';
+import type { Product, CreateProductInput } from '@/types/product';
 
-type ProductStatus = 'Active' | 'Low stock' | 'Out of stock' | 'Archived';
-type Product = { id: string; name: string; sku: string; category: string; price: number; cost: number; stock: number; reorder: number; unit: string; status: ProductStatus; supplier: string };
-
-const initialProducts: Product[] = [
-  { id: '1', name: '2.5mm Twin Cable', sku: 'CAB-2.5-TW', category: 'Cables', price: 8500, cost: 6200, stock: 12, reorder: 20, unit: 'coil', status: 'Low stock', supplier: 'Hydra Electric' },
-  { id: '2', name: '13A Double Socket', sku: 'SOC-13A-D', category: 'Sockets', price: 450, cost: 280, stock: 38, reorder: 15, unit: 'piece', status: 'Active', supplier: 'PowerGrid Kenya' },
-  { id: '3', name: '20A MCB', sku: 'BRK-20A', category: 'Breakers', price: 650, cost: 420, stock: 7, reorder: 10, unit: 'piece', status: 'Low stock', supplier: 'Vanta Lighting' },
-  { id: '4', name: 'LED Bulb 12W', sku: 'LGT-12W', category: 'Lighting', price: 320, cost: 180, stock: 42, reorder: 20, unit: 'piece', status: 'Active', supplier: 'Vanta Lighting' },
-  { id: '5', name: '16-inch Stand Fan', sku: 'FAN-16-ST', category: 'Appliances', price: 6400, cost: 5100, stock: 0, reorder: 5, unit: 'piece', status: 'Out of stock', supplier: 'Coast Appliances' },
+const UNITS = [
+  { value: 'piece', label: 'Piece' },
+  { value: 'coil', label: 'Coil' },
+  { value: 'length', label: 'Length' },
+  { value: 'box', label: 'Box' },
+  { value: 'kg', label: 'Kilogram' },
+  { value: 'litre', label: 'Litre' },
 ];
 
-const money = (amount: number) => `KES ${amount.toLocaleString('en-KE')}`;
-const statusFor = (stock: number, reorder: number): ProductStatus => stock === 0 ? 'Out of stock' : stock <= reorder ? 'Low stock' : 'Active';
+const DEFAULT_CATEGORIES = [
+  'Cables',
+  'Sockets',
+  'Breakers',
+  'Lighting',
+  'Appliances',
+  'Finishes',
+  'Other',
+];
 
-export function Products() {
-  const [products, setProducts] = useState(initialProducts);
-  const [selectedId, setSelectedId] = useState('1');
+const PAGE_SIZE = 20;
+
+function statusOf(p: Product): 'active' | 'low' | 'out' | 'archived' {
+  if (!p.active) return 'archived';
+  if (p.stock === 0) return 'out';
+  if (p.stock <= p.lowStockThreshold) return 'low';
+  return 'active';
+}
+
+const STATUS_LABEL: Record<ReturnType<typeof statusOf>, string> = {
+  active: 'Active',
+  low: 'Low stock',
+  out: 'Out of stock',
+  archived: 'Archived',
+};
+
+const STATUS_VARIANT: Record<
+  ReturnType<typeof statusOf>,
+  'success' | 'warning' | 'danger' | 'neutral'
+> = {
+  active: 'success',
+  low: 'warning',
+  out: 'danger',
+  archived: 'neutral',
+};
+
+export default function Products() {
+  const { toast } = useNotifications();
+
+  const [items, setItems] = useState<Product[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [loading, setLoading] = useState(true);
+
   const [search, setSearch] = useState('');
-  const [category, setCategory] = useState('All categories');
-  const [status, setStatus] = useState('All statuses');
-  const [showForm, setShowForm] = useState(false);
-  const [selectedRows, setSelectedRows] = useState<string[]>([]);
-  const [notice, setNotice] = useState('');
-  const [form, setForm] = useState({ name: '', sku: '', category: 'Cables', price: '', cost: '', stock: '', reorder: '10', unit: 'piece', supplier: '' });
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [category, setCategory] = useState('');
+  const [status, setStatus] = useState<'all' | 'active' | 'low' | 'out' | 'archived'>('all');
+
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [editing, setEditing] = useState<Product | null>(null);
+  const [creating, setCreating] = useState(false);
+
   useEffect(() => {
-    let active = true;
-    void productApi.list({ page: 1, limit: 100 }).then((response) => {
-      if (!active || !response.data.length) return;
-      setProducts(response.data.map((item) => {
-        const stock = Number(item.stock ?? 0);
-        const reorder = Number(item.lowStockThreshold ?? item.reorder ?? 0);
-        return { id: String(item._id ?? item.id), name: String(item.name ?? ''), sku: String(item.sku ?? item.barcode ?? ''), category: String(item.category ?? 'Uncategorised'), price: Number(item.price ?? 0), cost: Number(item.cost ?? 0), stock, reorder, unit: String(item.unit ?? 'piece'), status: item.active === false ? 'Archived' : statusFor(stock, reorder), supplier: String(item.supplier?.name ?? item.supplier ?? 'Supplier pending') };
-      }));
-    }).catch(() => setNotice('Unable to load products from the server.'));
-    return () => { active = false; };
-  }, []);
-  const categories = ['All categories', ...new Set(products.map((product) => product.category))];
-  const selectedProduct = products.find((product) => product.id === selectedId) ?? products[0];
-  const filteredProducts = useMemo(() => products.filter((product) => (category === 'All categories' || product.category === category) && (status === 'All statuses' || product.status === status) && `${product.name} ${product.sku} ${product.supplier}`.toLowerCase().includes(search.toLowerCase())), [category, products, search, status]);
-  const inventoryValue = products.reduce((sum, product) => sum + product.cost * product.stock, 0);
-  const averageMargin = Math.round(products.reduce((sum, product) => sum + ((product.price - product.cost) / product.price) * 100, 0) / products.length);
-  const toggleRow = (id: string) => setSelectedRows((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
-  const archiveSelected = async () => { await Promise.all(selectedRows.map((id) => productApi.remove(id))); setProducts((current) => current.filter((product) => !selectedRows.includes(product.id))); setSelectedRows([]); setNotice('Selected products archived'); };
-  const addProduct = async () => { const price = Number(form.price); const cost = Number(form.cost); const stock = Number(form.stock); const reorder = Number(form.reorder); if (!form.name.trim() || !form.sku.trim() || !Number.isFinite(price) || !Number.isFinite(cost)) return; try { const created = await productApi.create({ name: form.name, sku: form.sku, category: form.category, price, cost, stock: stock || 0, lowStockThreshold: reorder || 0, unit: form.unit, supplier: form.supplier || undefined }); const newProduct: Product = { id: String(created._id ?? created.id), name: String(created.name ?? form.name), sku: String(created.sku ?? form.sku), category: String(created.category ?? form.category), price: Number(created.price ?? price), cost: Number(created.cost ?? cost), stock: Number(created.stock ?? stock ?? 0), reorder: Number(created.lowStockThreshold ?? reorder ?? 0), unit: String(created.unit ?? form.unit), status: created.active === false ? 'Archived' : statusFor(Number(created.stock ?? stock ?? 0), Number(created.lowStockThreshold ?? reorder ?? 0)), supplier: String(created.supplier?.name ?? created.supplier ?? (form.supplier || 'Supplier pending')) }; setProducts((current) => [...current, newProduct]); setSelectedId(newProduct.id); setForm({ name: '', sku: '', category: 'Cables', price: '', cost: '', stock: '', reorder: '10', unit: 'piece', supplier: '' }); setShowForm(false); setNotice('Product added to catalog'); } catch { setNotice('Unable to add product. Check the required fields.'); } };
+    const t = setTimeout(() => {
+      setDebouncedSearch(search);
+      setPage(1);
+    }, 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await productApi.list({
+        page,
+        limit: PAGE_SIZE,
+        search: debouncedSearch || undefined,
+        category: category || undefined,
+        active: status === 'archived' ? false : status === 'all' ? undefined : true,
+      });
+      setItems(res.data);
+      setTotal(res.meta.total);
+    } catch (e) {
+      toast({
+        type: 'error',
+        message: (e as { message?: string }).message || 'Could not load products',
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, [page, debouncedSearch, category, status, toast]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  useEffect(() => {
+    setSelectedIds([]);
+  }, [page, debouncedSearch, category, status]);
+
+  const categories = useMemo(() => {
+    const fromItems = items.map((p) => p.category).filter(Boolean) as string[];
+    return Array.from(new Set([...DEFAULT_CATEGORIES, ...fromItems])).sort();
+  }, [items]);
+
+  const filteredByStatus = useMemo(() => {
+    if (status === 'all' || status === 'archived') return items;
+    return items.filter((p) => statusOf(p) === status);
+  }, [items, status]);
+
+  const toggleRow = (id: string) =>
+    setSelectedIds((cur) =>
+      cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]
+    );
+
+  const toggleAll = () => {
+    if (selectedIds.length === filteredByStatus.length) setSelectedIds([]);
+    else setSelectedIds(filteredByStatus.map((p) => p._id));
+  };
+
+  const archiveSelected = async () => {
+    if (!selectedIds.length) return;
+    if (!window.confirm(`Archive ${selectedIds.length} product(s)?`)) return;
+    try {
+      await Promise.all(selectedIds.map((id) => productApi.remove(id)));
+      toast({ type: 'success', message: 'Products archived' });
+      setSelectedIds([]);
+      load();
+    } catch {
+      toast({ type: 'error', message: 'Archive failed' });
+    }
+  };
+
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   return (
-    <div className="products-workspace">
-      <div className="panel products-header"><div><p className="eyebrow">Catalog management</p><h3>Products</h3><p className="panel-subtitle">Manage product information, prices, stock thresholds, suppliers, and catalog status.</p></div><button className="primary-button small" type="button" onClick={() => setShowForm((current) => !current)}>{showForm ? 'Close form' : 'Add product'}</button></div>
-      <div className="product-kpis"><div className="stat-card compact"><div className="stat-header"><span>Total products</span></div><div className="stat-value">{products.length}</div><div className="stat-footer">Catalog items</div></div><div className="stat-card compact"><div className="stat-header"><span>Inventory value</span><span className="trend up">+8.4%</span></div><div className="stat-value">{money(inventoryValue)}</div><div className="stat-footer">At cost value</div></div><div className="stat-card compact"><div className="stat-header"><span>Low stock</span><span className="trend down">Action</span></div><div className="stat-value">{products.filter((product) => product.status === 'Low stock').length}</div><div className="stat-footer">Need replenishment</div></div><div className="stat-card compact"><div className="stat-header"><span>Average margin</span></div><div className="stat-value">{averageMargin}%</div><div className="stat-footer">Across active products</div></div></div>
-      {showForm && <div className="panel product-form-panel"><div><p className="eyebrow">New catalog item</p><h3>Add product</h3><p className="panel-subtitle">Define pricing and stock thresholds before the item reaches POS.</p></div><div className="settings-form-grid"><label className="field"><span>Product name</span><input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="Product name" /></label><label className="field"><span>SKU or barcode</span><input value={form.sku} onChange={(event) => setForm({ ...form, sku: event.target.value })} placeholder="SKU-0001" /></label><label className="field"><span>Category</span><select value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value })}><option>Cables</option><option>Sockets</option><option>Breakers</option><option>Lighting</option><option>Appliances</option></select></label><label className="field"><span>Unit</span><select value={form.unit} onChange={(event) => setForm({ ...form, unit: event.target.value })}><option>piece</option><option>coil</option><option>length</option><option>box</option></select></label><label className="field"><span>Selling price</span><input type="number" min="0" value={form.price} onChange={(event) => setForm({ ...form, price: event.target.value })} placeholder="0" /></label><label className="field"><span>Cost price</span><input type="number" min="0" value={form.cost} onChange={(event) => setForm({ ...form, cost: event.target.value })} placeholder="0" /></label><label className="field"><span>Opening stock</span><input type="number" min="0" value={form.stock} onChange={(event) => setForm({ ...form, stock: event.target.value })} placeholder="0" /></label><label className="field"><span>Reorder point</span><input type="number" min="0" value={form.reorder} onChange={(event) => setForm({ ...form, reorder: event.target.value })} /></label><label className="field"><span>Supplier</span><input value={form.supplier} onChange={(event) => setForm({ ...form, supplier: event.target.value })} placeholder="Supplier name" /></label></div><button className="primary-button small" type="button" onClick={addProduct}>Create product</button></div>}
-      <div className="product-layout"><div className="panel"><div className="products-toolbar"><div><p className="eyebrow">Product catalog</p><h3>All products</h3></div><div className="product-filters"><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search name, SKU, supplier" aria-label="Search products" /><select value={category} onChange={(event) => setCategory(event.target.value)} aria-label="Product category">{categories.map((item) => <option key={item}>{item}</option>)}</select><select value={status} onChange={(event) => setStatus(event.target.value)} aria-label="Product status"><option>All statuses</option><option>Active</option><option>Low stock</option><option>Out of stock</option><option>Archived</option></select></div></div>{selectedRows.length > 0 && <div className="bulk-product-actions"><span>{selectedRows.length} selected</span><button className="danger-button small" type="button" onClick={archiveSelected}>Archive selected</button></div>}<div className="product-table"><table><thead><tr><th><input type="checkbox" checked={filteredProducts.length > 0 && selectedRows.length === filteredProducts.length} onChange={() => setSelectedRows(selectedRows.length === filteredProducts.length ? [] : filteredProducts.map((product) => product.id))} aria-label="Select all products" /></th><th>Product</th><th>Category</th><th>Price</th><th>Margin</th><th>Stock</th><th>Status</th></tr></thead><tbody>{filteredProducts.map((product) => <tr key={product.id} className={selectedId === product.id ? 'selected-row' : ''} onClick={() => setSelectedId(product.id)}><td><input type="checkbox" checked={selectedRows.includes(product.id)} onChange={() => toggleRow(product.id)} onClick={(event) => event.stopPropagation()} aria-label={`Select ${product.name}`} /></td><td><strong>{product.name}</strong><small className="table-secondary">{product.sku} · {product.unit}</small></td><td>{product.category}</td><td>{money(product.price)}</td><td>{Math.round(((product.price - product.cost) / product.price) * 100)}%</td><td><strong>{product.stock}</strong></td><td><span className={`status-badge ${product.status === 'Active' ? 'success' : product.status === 'Low stock' ? 'warning' : product.status === 'Out of stock' ? 'danger' : 'neutral'}`}>{product.status}</span></td></tr>)}</tbody></table></div></div><aside className="panel product-detail"><div className="panel-header"><div><p className="eyebrow">Product detail</p><h3>{selectedProduct.name}</h3></div><span className={`status-badge ${selectedProduct.status === 'Active' ? 'success' : selectedProduct.status === 'Low stock' ? 'warning' : selectedProduct.status === 'Out of stock' ? 'danger' : 'neutral'}`}>{selectedProduct.status}</span></div><p className="product-detail-sku">{selectedProduct.sku} · {selectedProduct.category}</p><div className="product-detail-actions"><button className="primary-button small" type="button" onClick={() => setNotice(`Edit form opened for ${selectedProduct.name}`)}>Edit product</button><button className="secondary-button small" type="button" onClick={() => setNotice(`Stock adjustment opened for ${selectedProduct.name}`)}>Adjust stock</button></div><div className="product-detail-list"><div><span>Selling price</span><strong>{money(selectedProduct.price)}</strong></div><div><span>Cost price</span><strong>{money(selectedProduct.cost)}</strong></div><div><span>Gross margin</span><strong>{Math.round(((selectedProduct.price - selectedProduct.cost) / selectedProduct.price) * 100)}%</strong></div><div><span>On hand</span><strong>{selectedProduct.stock} {selectedProduct.unit}s</strong></div><div><span>Reorder at</span><strong>{selectedProduct.reorder}</strong></div><div><span>Supplier</span><strong>{selectedProduct.supplier}</strong></div></div><div className="product-health"><strong>Catalog guidance</strong><span>{selectedProduct.status === 'Out of stock' ? 'Create a purchase order before allowing checkout.' : selectedProduct.status === 'Low stock' ? 'Stock is below the reorder point.' : 'Product is ready for sale.'}</span></div></aside></div>
-      {notice && <div className="pos-notice" role="status">{notice}</div>}
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold text-fg">Products</h1>
+          <p className="text-sm text-muted mt-1">
+            {total} item{total === 1 ? '' : 's'} in catalog
+          </p>
+        </div>
+        <Button icon={<Plus size={16} />} onClick={() => setCreating(true)}>
+          Add product
+        </Button>
+      </div>
+
+      <Card padded={false}>
+        <div className="flex flex-col sm:flex-row gap-2 p-4 border-b border-border">
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search name, SKU, supplier..."
+            icon={<Search size={14} />}
+          />
+          <Select
+            value={category}
+            onChange={(e) => {
+              setCategory(e.target.value);
+              setPage(1);
+            }}
+            options={[
+              { value: '', label: 'All categories' },
+              ...categories.map((c) => ({ value: c, label: c })),
+            ]}
+          />
+          <Select
+            value={status}
+            onChange={(e) => {
+              setStatus(e.target.value as typeof status);
+              setPage(1);
+            }}
+            options={[
+              { value: 'all', label: 'All statuses' },
+              { value: 'active', label: 'Active' },
+              { value: 'low', label: 'Low stock' },
+              { value: 'out', label: 'Out of stock' },
+              { value: 'archived', label: 'Archived' },
+            ]}
+          />
+        </div>
+
+        {selectedIds.length > 0 && (
+          <div className="flex items-center justify-between px-4 py-2 bg-brand-50 dark:bg-brand-500/10 border-b border-border">
+            <span className="text-sm text-fg">
+              {selectedIds.length} selected
+            </span>
+            <Button
+              size="sm"
+              variant="danger"
+              icon={<Archive size={14} />}
+              onClick={archiveSelected}
+            >
+              Archive selected
+            </Button>
+          </div>
+        )}
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-elevated border-b border-border">
+              <tr>
+                <th className="w-10 px-4 py-3">
+                  <input
+                    type="checkbox"
+                    checked={
+                      filteredByStatus.length > 0 &&
+                      selectedIds.length === filteredByStatus.length
+                    }
+                    onChange={toggleAll}
+                    aria-label="Select all"
+                  />
+                </th>
+                <th className="px-4 py-3 text-left font-medium text-muted">Product</th>
+                <th className="px-4 py-3 text-left font-medium text-muted">Category</th>
+                <th className="px-4 py-3 text-right font-medium text-muted">Price</th>
+                <th className="px-4 py-3 text-right font-medium text-muted">Margin</th>
+                <th className="px-4 py-3 text-right font-medium text-muted">Stock</th>
+                <th className="px-4 py-3 text-left font-medium text-muted">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {loading ? (
+                <tr>
+                  <td colSpan={7} className="px-4 py-16 text-center">
+                    <Spinner />
+                  </td>
+                </tr>
+              ) : filteredByStatus.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-4 py-16 text-center text-muted">
+                    <Package size={32} className="mx-auto mb-2 opacity-40" />
+                    No products match these filters.
+                  </td>
+                </tr>
+              ) : (
+                filteredByStatus.map((p) => {
+                  const s = statusOf(p);
+                  const margin =
+                    p.price > 0
+                      ? Math.round(((p.price - p.cost) / p.price) * 100)
+                      : 0;
+                  return (
+                    <tr
+                      key={p._id}
+                      onClick={() => setEditing(p)}
+                      className="hover:bg-elevated cursor-pointer transition"
+                    >
+                      <td
+                        className="px-4 py-3"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.includes(p._id)}
+                          onChange={() => toggleRow(p._id)}
+                          aria-label={`Select ${p.name}`}
+                        />
+                      </td>
+                      <td className="px-4 py-3">
+                        <p className="font-medium text-fg">{p.name}</p>
+                        <p className="text-xs text-muted mt-0.5">
+                          {p.sku || '—'}
+                          {p.unit && ` · ${p.unit}`}
+                        </p>
+                      </td>
+                      <td className="px-4 py-3 text-muted">
+                        {p.category || 'Uncategorised'}
+                      </td>
+                      <td className="px-4 py-3 text-right text-fg">
+                        {formatCurrency(p.price)}
+                      </td>
+                      <td className="px-4 py-3 text-right text-fg">
+                        {margin}%
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <span className="font-semibold text-fg">{p.stock}</span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <Badge variant={STATUS_VARIANT[s]}>
+                          {STATUS_LABEL[s]}
+                        </Badge>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between px-4 py-3 border-t border-border bg-elevated text-sm">
+            <span className="text-muted">
+              Page {page} of {totalPages} · {total} total
+            </span>
+            <div className="flex gap-1">
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={page <= 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+              >
+                Prev
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={page >= totalPages}
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              >
+                Next
+              </Button>
+            </div>
+          </div>
+        )}
+      </Card>
+
+      {creating && (
+        <ProductFormModal
+          onClose={() => setCreating(false)}
+          onSaved={() => {
+            setCreating(false);
+            load();
+          }}
+          categories={categories}
+        />
+      )}
+
+      {editing && (
+        <ProductFormModal
+          product={editing}
+          onClose={() => setEditing(null)}
+          onSaved={() => {
+            setEditing(null);
+            load();
+          }}
+          categories={categories}
+        />
+      )}
     </div>
+  );
+}
+
+interface FormModalProps {
+  product?: Product;
+  categories: string[];
+  onClose: () => void;
+  onSaved: () => void;
+}
+
+function ProductFormModal({ product, categories, onClose, onSaved }: FormModalProps) {
+  const { toast } = useNotifications();
+  const isEdit = Boolean(product);
+
+  const [form, setForm] = useState<CreateProductInput>({
+    name: product?.name || '',
+    price: product?.price ?? 0,
+    sku: product?.sku || '',
+    category: product?.category || categories[0] || 'Other',
+    unit: product?.unit || 'piece',
+    supplier: product?.supplier || '',
+    location: product?.location || '',
+    cost: product?.cost ?? 0,
+    stock: product?.stock ?? 0,
+    lowStockThreshold: product?.lowStockThreshold ?? 5,
+    imageUrl: product?.imageUrl || undefined,
+    imagePublicId: product?.imagePublicId || undefined,
+  });
+  const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+
+  const setField = <K extends keyof CreateProductInput>(
+    k: K,
+    v: CreateProductInput[K]
+  ) => setForm((cur) => ({ ...cur, [k]: v }));
+
+  const uploadImage = async (file: File) => {
+    setUploading(true);
+    try {
+      const res = await productApi.uploadImage(file);
+      setField('imageUrl', res.url);
+      setField('imagePublicId', res.publicId);
+      toast({ type: 'success', message: 'Image uploaded' });
+    } catch {
+      toast({ type: 'error', message: 'Image upload failed' });
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const submit = async () => {
+    if (!form.name.trim()) {
+      toast({ type: 'error', message: 'Product name is required' });
+      return;
+    }
+    if (!Number.isFinite(form.price) || form.price < 0) {
+      toast({ type: 'error', message: 'Enter a valid price' });
+      return;
+    }
+    setSaving(true);
+    try {
+      if (isEdit && product) {
+        await productApi.update(product._id, form);
+        toast({ type: 'success', message: 'Product updated' });
+      } else {
+        await productApi.create(form);
+        toast({ type: 'success', message: 'Product added' });
+      }
+      onSaved();
+    } catch (e) {
+      toast({
+        type: 'error',
+        message: (e as { message?: string }).message || 'Save failed',
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title={isEdit ? 'Edit product' : 'Add product'}
+      size="lg"
+      footer={
+        <>
+          <Button variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button loading={saving} onClick={submit}>
+            {isEdit ? 'Save changes' : 'Create product'}
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <div className="flex items-center gap-4">
+          <div className="w-16 h-16 rounded-md border border-border bg-elevated flex items-center justify-center overflow-hidden shrink-0">
+            {form.imageUrl ? (
+              <img src={form.imageUrl} alt={form.name} className="w-full h-full object-cover" />
+            ) : (
+              <ImageIcon size={20} className="text-muted" />
+            )}
+          </div>
+          <div>
+            <input
+              id="product-image"
+              type="file"
+              accept="image/*"
+              hidden
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) uploadImage(f);
+                e.target.value = '';
+              }}
+            />
+            <label htmlFor="product-image">
+              <Button
+                size="sm"
+                variant="outline"
+                loading={uploading}
+                onClick={(e) => {
+                  e.preventDefault();
+                  document.getElementById('product-image')?.click();
+                }}
+              >
+                {form.imageUrl ? 'Change image' : 'Upload image'}
+              </Button>
+            </label>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <FormField label="Product name" required className="sm:col-span-2">
+            <Input
+              value={form.name}
+              onChange={(e) => setField('name', e.target.value)}
+              placeholder="e.g. 2.5mm Twin Cable"
+            />
+          </FormField>
+
+          <FormField label="SKU or barcode">
+            <Input
+              value={form.sku || ''}
+              onChange={(e) => setField('sku', e.target.value)}
+              placeholder="CAB-2.5-TW"
+            />
+          </FormField>
+
+          <FormField label="Category">
+            <Select
+              value={form.category || ''}
+              onChange={(e) => setField('category', e.target.value)}
+              options={categories.map((c) => ({ value: c, label: c }))}
+            />
+          </FormField>
+
+          <FormField label="Unit">
+            <Select
+              value={form.unit || 'piece'}
+              onChange={(e) => setField('unit', e.target.value)}
+              options={UNITS}
+            />
+          </FormField>
+
+          <FormField label="Location">
+            <Input
+              value={form.location || ''}
+              onChange={(e) => setField('location', e.target.value)}
+              placeholder="Main Branch"
+            />
+          </FormField>
+
+          <FormField label="Selling price" required>
+            <Input
+              type="number"
+              min="0"
+              value={String(form.price ?? '')}
+              onChange={(e) => setField('price', Number(e.target.value))}
+            />
+          </FormField>
+
+          <FormField label="Cost price">
+            <Input
+              type="number"
+              min="0"
+              value={String(form.cost ?? '')}
+              onChange={(e) => setField('cost', Number(e.target.value))}
+            />
+          </FormField>
+
+          <FormField label={isEdit ? 'Current stock' : 'Opening stock'}>
+            <Input
+              type="number"
+              value={String(form.stock ?? '')}
+              onChange={(e) => setField('stock', Number(e.target.value))}
+              disabled={isEdit}
+            />
+          </FormField>
+
+          <FormField label="Reorder point">
+            <Input
+              type="number"
+              min="0"
+              value={String(form.lowStockThreshold ?? '')}
+              onChange={(e) =>
+                setField('lowStockThreshold', Number(e.target.value))
+              }
+            />
+          </FormField>
+
+          <FormField label="Supplier" className="sm:col-span-2">
+            <Input
+              value={form.supplier || ''}
+              onChange={(e) => setField('supplier', e.target.value)}
+              placeholder="Supplier name"
+            />
+          </FormField>
+        </div>
+
+        {isEdit && (
+          <p className="text-xs text-muted">
+            To change current stock, use the Inventory page's Adjust action.
+          </p>
+        )}
+      </div>
+    </Modal>
   );
 }

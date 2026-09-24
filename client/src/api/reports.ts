@@ -16,6 +16,7 @@ export interface TopProduct {
 
 export interface StaffPerformance {
   _id: string;
+  name: string;
   totalSales: number;
   transactions: number;
 }

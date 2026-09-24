@@ -1,30 +1,309 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import {
+  Search,
+  Download,
+  Package as PackageIcon,
+} from 'lucide-react';
+import { Card } from '@/components/ui/Card';
+import { Button } from '@/components/ui/Button';
+import { Input } from '@/components/ui/Input';
+import { Select } from '@/components/ui/Select';
+import { Badge } from '@/components/ui/Badge';
+import { Spinner } from '@/components/ui/Spinner';
+import { classNames } from '@/utils/classNames';
+import { useNotifications } from '@/context/NotificationContext';
+import { saleApi } from '@/api/sales';
+import { formatCurrency } from '@/utils/currency';
+import { formatDateTime } from '@/utils/date';
+import { PAYMENT_LABELS, ROUTES } from '@/utils/constants';
+import type { Sale } from '@/types/sale';
 
-type SaleStatus = 'Paid' | 'Pending' | 'Refunded' | 'Credit';
-type Sale = { id: number; receipt: string; customer: string; cashier: string; total: number; method: string; date: string; branch: string; status: SaleStatus; items: number };
+const PAGE_SIZE = 20;
 
-const initialSales: Sale[] = [
-  { id: 1, receipt: 'INV-00482', customer: 'James Ndungu', cashier: 'Alice', total: 3450, method: 'M-Pesa', date: 'Today, 09:42', branch: 'Main Branch', status: 'Paid', items: 3 },
-  { id: 2, receipt: 'INV-00481', customer: 'Sunset Homes', cashier: 'John', total: 16820, method: 'Credit', date: 'Today, 09:18', branch: 'Main Branch', status: 'Credit', items: 8 },
-  { id: 3, receipt: 'INV-00480', customer: 'Kariuki Tech', cashier: 'Mary', total: 9625, method: 'Cash', date: 'Yesterday, 16:05', branch: 'Industrial Area', status: 'Pending', items: 5 },
-  { id: 4, receipt: 'INV-00479', customer: 'Walk-in', cashier: 'Alice', total: 4820, method: 'Card', date: 'Yesterday, 14:21', branch: 'Main Branch', status: 'Paid', items: 4 },
-  { id: 5, receipt: 'INV-00478', customer: 'Diana Wanjiru', cashier: 'Peter', total: 11500, method: 'M-Pesa', date: '20 Sep 2026', branch: 'Industrial Area', status: 'Refunded', items: 1 },
-];
+type StatusFilter = 'all' | 'paid' | 'refunded' | 'voided';
 
-const money = (amount: number) => `KES ${amount.toLocaleString('en-KE')}`;
+function statusOf(sale: Sale): 'paid' | 'refunded' | 'voided' | 'pending' {
+  if (sale.voided) return 'voided';
+  if (sale.paymentStatus === 'refunded') return 'refunded';
+  if (sale.paymentStatus === 'pending') return 'pending';
+  return 'paid';
+}
 
-export function Sales() {
-  const [sales, setSales] = useState(initialSales);
-  const [selectedId, setSelectedId] = useState(1);
+const STATUS_VARIANT = {
+  paid: 'success',
+  pending: 'warning',
+  refunded: 'info',
+  voided: 'danger',
+} as const;
+
+export default function Sales() {
+  const navigate = useNavigate();
+  const { toast } = useNotifications();
+
+  const [items, setItems] = useState<Sale[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [loading, setLoading] = useState(true);
+
   const [search, setSearch] = useState('');
-  const [status, setStatus] = useState('All statuses');
-  const [method, setMethod] = useState('All methods');
-  const [notice, setNotice] = useState('');
-  const selected = sales.find((sale) => sale.id === selectedId) ?? sales[0];
-  const filtered = useMemo(() => sales.filter((sale) => (status === 'All statuses' || sale.status === status) && (method === 'All methods' || sale.method === method) && `${sale.receipt} ${sale.customer} ${sale.cashier} ${sale.branch}`.toLowerCase().includes(search.toLowerCase())), [method, sales, search, status]);
-  const revenue = sales.filter((sale) => sale.status !== 'Refunded').reduce((sum, sale) => sum + sale.total, 0);
-  const exportSales = () => { const csv = [['Receipt', 'Customer', 'Cashier', 'Total', 'Method', 'Branch', 'Status'], ...sales.map((sale) => [sale.receipt, sale.customer, sale.cashier, String(sale.total), sale.method, sale.branch, sale.status])].map((row) => row.join(',')).join('\n'); const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' })); const link = document.createElement('a'); link.href = url; link.download = 'bizos-sales.csv'; link.click(); URL.revokeObjectURL(url); setNotice('Sales report exported'); };
-  const updateStatus = (nextStatus: SaleStatus) => { setSales((current) => current.map((sale) => sale.id === selected.id ? { ...sale, status: nextStatus } : sale)); setNotice(`${selected.receipt} marked ${nextStatus.toLowerCase()}`); };
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [method, setMethod] = useState('');
+  const [status, setStatus] = useState<StatusFilter>('all');
 
-  return <div className="sales-workspace"><div className="panel sales-header"><div><p className="eyebrow">Revenue operations</p><h3>Sales</h3><p className="panel-subtitle">Review transactions, payment methods, customer orders, and refunds.</p></div><div className="sales-header-actions"><button className="secondary-button small" type="button" onClick={exportSales}>Export CSV</button><button className="primary-button small" type="button" onClick={() => setNotice('New sale opened in POS')}>New sale</button></div></div><div className="sales-kpis"><div className="stat-card compact"><div className="stat-header"><span>Revenue</span><span className="trend up">+12.4%</span></div><div className="stat-value">{money(revenue)}</div><div className="stat-footer">Current period</div></div><div className="stat-card compact"><div className="stat-header"><span>Transactions</span></div><div className="stat-value">{sales.length}</div><div className="stat-footer">All recorded sales</div></div><div className="stat-card compact"><div className="stat-header"><span>Average order</span></div><div className="stat-value">{money(Math.round(revenue / sales.length))}</div><div className="stat-footer">Per transaction</div></div><div className="stat-card compact"><div className="stat-header"><span>Pending action</span><span className="trend down">Review</span></div><div className="stat-value">{sales.filter((sale) => sale.status === 'Pending' || sale.status === 'Credit').length}</div><div className="stat-footer">Pending or credit sales</div></div></div><div className="sales-layout"><div className="panel"><div className="sales-toolbar"><div><p className="eyebrow">Transaction register</p><h3>Sales history</h3></div><div className="sales-filters"><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search receipt or customer" aria-label="Search sales" /><select value={status} onChange={(event) => setStatus(event.target.value)} aria-label="Sale status"><option>All statuses</option><option>Paid</option><option>Pending</option><option>Credit</option><option>Refunded</option></select><select value={method} onChange={(event) => setMethod(event.target.value)} aria-label="Payment method"><option>All methods</option><option>M-Pesa</option><option>Cash</option><option>Card</option><option>Credit</option></select></div></div><div className="sales-table"><table><thead><tr><th>Receipt</th><th>Customer</th><th>Cashier</th><th>Total</th><th>Method</th><th>Date</th><th>Status</th></tr></thead><tbody>{filtered.map((sale) => <tr className={selectedId === sale.id ? 'selected-row' : ''} key={sale.id} onClick={() => setSelectedId(sale.id)}><td><strong>{sale.receipt}</strong><small className="table-secondary">{sale.items} items</small></td><td>{sale.customer}</td><td>{sale.cashier}</td><td><strong>{money(sale.total)}</strong></td><td>{sale.method}</td><td>{sale.date}</td><td><span className={`status-badge ${sale.status === 'Paid' ? 'success' : sale.status === 'Refunded' ? 'danger' : 'warning'}`}>{sale.status}</span></td></tr>)}</tbody></table></div></div><aside className="panel sale-detail"><div className="panel-header"><div><p className="eyebrow">Transaction detail</p><h3>{selected.receipt}</h3></div><span className={`status-badge ${selected.status === 'Paid' ? 'success' : selected.status === 'Refunded' ? 'danger' : 'warning'}`}>{selected.status}</span></div><p className="sale-detail-customer">{selected.customer} · {selected.branch}</p><div className="sale-detail-actions"><button className="primary-button small" type="button" onClick={() => setNotice(`${selected.receipt} receipt opened`)}>View receipt</button>{selected.status !== 'Refunded' && <button className="secondary-button small" type="button" onClick={() => updateStatus('Refunded')}>Refund sale</button>}</div><div className="sale-detail-list"><div><span>Total</span><strong>{money(selected.total)}</strong></div><div><span>Payment method</span><strong>{selected.method}</strong></div><div><span>Customer</span><strong>{selected.customer}</strong></div><div><span>Cashier</span><strong>{selected.cashier}</strong></div><div><span>Items</span><strong>{selected.items}</strong></div><div><span>Sale time</span><strong>{selected.date}</strong></div></div>{selected.status === 'Pending' && <button className="meta-link" type="button" onClick={() => updateStatus('Paid')}>Mark payment received</button>}{selected.status === 'Credit' && <button className="meta-link" type="button" onClick={() => setNotice(`Collection reminder opened for ${selected.customer}`)}>Open collection reminder</button>}</aside></div>{notice && <div className="pos-notice" role="status">{notice}</div>}</div>;
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await saleApi.list({
+        page,
+        limit: PAGE_SIZE,
+        paymentMethod: method || undefined,
+      });
+      setItems(res.data);
+      setTotal(res.meta.total);
+    } catch (e) {
+      toast({
+        type: 'error',
+        message: (e as { message?: string }).message || 'Could not load sales',
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, [page, method, toast]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const filtered = useMemo(() => {
+    let list = items;
+    if (status === 'voided') list = list.filter((s) => s.voided);
+    else if (status === 'paid') list = list.filter((s) => statusOf(s) === 'paid');
+    else if (status === 'refunded') list = list.filter((s) => statusOf(s) === 'refunded');
+    if (debouncedSearch.trim()) {
+      const q = debouncedSearch.trim().toLowerCase();
+      list = list.filter(
+        (s) =>
+          s.saleNumber.toLowerCase().includes(q) ||
+          (s.customerId || '').toLowerCase().includes(q) ||
+          (s.cashierId || '').toLowerCase().includes(q)
+      );
+    }
+    return list;
+  }, [items, status, debouncedSearch]);
+
+  const revenue = useMemo(
+    () => filtered.filter((s) => !s.voided).reduce((sum, s) => sum + s.total, 0),
+    [filtered]
+  );
+
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+  const exportCsv = () => {
+    const header = ['Sale', 'Date', 'Total', 'Payment', 'Status'];
+    const rows = filtered.map((s) => [
+      s.saleNumber,
+      new Date(s.createdAt).toISOString(),
+      String(s.total),
+      s.paymentMethod || '',
+      statusOf(s),
+    ]);
+    const csv = [header, ...rows]
+      .map((r) => r.map((c) => `"${c.replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'bizos-sales.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+    toast({ type: 'success', message: 'Exported' });
+  };
+
+  return (
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold text-fg">Sales</h1>
+          <p className="text-sm text-muted mt-1">
+            {total} transaction{total === 1 ? '' : 's'}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            icon={<Download size={14} />}
+            onClick={exportCsv}
+          >
+            Export
+          </Button>
+          <Link to={ROUTES.pos}>
+            <Button size="sm">New sale</Button>
+          </Link>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <Kpi label="Revenue" value={formatCurrency(revenue)} hint="Current page" />
+        <Kpi label="Transactions" value={String(filtered.length)} hint="Matching filters" />
+        <Kpi
+          label="Average order"
+          value={
+            filtered.filter((s) => !s.voided).length
+              ? formatCurrency(
+                  Math.round(
+                    revenue / Math.max(1, filtered.filter((s) => !s.voided).length)
+                  )
+                )
+              : formatCurrency(0)
+          }
+          hint="Per transaction"
+        />
+        <Kpi
+          label="Voided"
+          value={String(filtered.filter((s) => s.voided).length)}
+          hint="On this page"
+        />
+      </div>
+
+      <Card padded={false}>
+        <div className="flex flex-col sm:flex-row gap-2 p-4 border-b border-border">
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search receipt or ID..."
+            icon={<Search size={14} />}
+          />
+          <Select
+            value={method}
+            onChange={(e) => {
+              setMethod(e.target.value);
+              setPage(1);
+            }}
+            options={[
+              { value: '', label: 'All methods' },
+              ...Object.entries(PAYMENT_LABELS).map(([code, label]) => ({
+                value: code,
+                label,
+              })),
+            ]}
+          />
+          <Select
+            value={status}
+            onChange={(e) => setStatus(e.target.value as StatusFilter)}
+            options={[
+              { value: 'all', label: 'All statuses' },
+              { value: 'paid', label: 'Paid' },
+              { value: 'refunded', label: 'Refunded' },
+              { value: 'voided', label: 'Voided' },
+            ]}
+          />
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-elevated border-b border-border">
+              <tr>
+                <th className="px-4 py-3 text-left font-medium text-muted">Sale</th>
+                <th className="px-4 py-3 text-left font-medium text-muted">Method</th>
+                <th className="px-4 py-3 text-right font-medium text-muted">Total</th>
+                <th className="px-4 py-3 text-left font-medium text-muted">Date</th>
+                <th className="px-4 py-3 text-left font-medium text-muted">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {loading ? (
+                <tr>
+                  <td colSpan={5} className="px-4 py-16 text-center">
+                    <Spinner />
+                  </td>
+                </tr>
+              ) : filtered.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="px-4 py-16 text-center text-muted">
+                    <PackageIcon size={32} className="mx-auto mb-2 opacity-40" />
+                    No sales match these filters.
+                  </td>
+                </tr>
+              ) : (
+                filtered.map((s) => {
+                  const st = statusOf(s);
+                  return (
+                    <tr
+                      key={s._id}
+                      onClick={() => navigate(ROUTES.saleDetail(s._id))}
+                      className={classNames(
+                        'hover:bg-elevated cursor-pointer transition'
+                      )}
+                    >
+                      <td className="px-4 py-3">
+                        <p className="font-medium text-fg">{s.saleNumber}</p>
+                        <p className="text-xs text-muted mt-0.5">
+                          {s.items.length} item{s.items.length === 1 ? '' : 's'}
+                        </p>
+                      </td>
+                      <td className="px-4 py-3 text-muted">
+                        {PAYMENT_LABELS[s.paymentMethod || ''] || s.paymentMethod || '—'}
+                      </td>
+                      <td className="px-4 py-3 text-right font-medium text-fg">
+                        {formatCurrency(s.total, s.currency)}
+                      </td>
+                      <td className="px-4 py-3 text-muted">
+                        {formatDateTime(s.createdAt)}
+                      </td>
+                      <td className="px-4 py-3">
+                        <Badge variant={STATUS_VARIANT[st]}>{st}</Badge>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between px-4 py-3 border-t border-border bg-elevated text-sm">
+            <span className="text-muted">
+              Page {page} of {totalPages} · {total} total
+            </span>
+            <div className="flex gap-1">
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={page <= 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+              >
+                Prev
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={page >= totalPages}
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              >
+                Next
+              </Button>
+            </div>
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+function Kpi({ label, value, hint }: { label: string; value: string; hint: string }) {
+  return (
+    <div className="bg-surface border border-border rounded-lg p-4">
+      <p className="text-xs text-muted">{label}</p>
+      <p className="text-xl font-semibold text-fg mt-1 truncate">{value}</p>
+      <p className="text-xs text-muted mt-1">{hint}</p>
+    </div>
+  );
 }

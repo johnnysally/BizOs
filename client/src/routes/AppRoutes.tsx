@@ -7,8 +7,24 @@ import { Spinner } from '@/components/ui/Spinner';
 import publicRoutes from './publicRoutes';
 
 const Dashboard = lazy(() => import('@/pages/app/Dashboard'));
+const POS = lazy(() => import('@/pages/app/POS'));
+const Products = lazy(() => import('@/pages/app/Products'));
+const Inventory = lazy(() => import('@/pages/app/Inventory'));
+const Sales = lazy(() => import('@/pages/app/Sales'));
+const SaleDetail = lazy(() => import('@/pages/app/SaleDetail'));
+const Customers = lazy(() => import('@/pages/app/Customers'));
+const Suppliers = lazy(() => import('@/pages/app/Suppliers'));
+const PurchaseOrders = lazy(() => import('@/pages/app/PurchaseOrders'));
+const PurchaseOrderForm = lazy(() => import('@/pages/app/PurchaseOrderForm'));
+const PurchaseOrderDetail = lazy(() => import('@/pages/app/PurchaseOrderDetail'));
+const Invoices = lazy(() => import('@/pages/app/Invoices'));
+const Reports = lazy(() => import('@/pages/app/Reports'));
+const Insights = lazy(() => import('@/pages/app/Insights'));
 const SettingsPage = lazy(() => import('@/pages/app/Settings'));
 const Chat = lazy(() => import('@/pages/app/Chat'));
+const Users = lazy(() => import('@/pages/app/Users'));
+const Invitations = lazy(() => import('@/pages/app/Invitations'));
+const Profile = lazy(() => import('@/pages/app/Profile'));
 const ComingSoon = lazy(() => import('./ComingSoon'));
 
 function PageLoader() {
@@ -50,10 +66,11 @@ const appRoutes: RouteObject[] = [
         children: [
           { index: true, element: wrap(<Dashboard />) },
 
-          { path: 'pos', element: soon('Point of sale') },
+          { path: 'pos', element: wrap(<POS />) },
+
           {
             path: 'products',
-            element: <Allow roles={['owner', 'manager']}>{soon('Products')}</Allow>,
+            element: <Allow roles={['owner', 'manager']}>{wrap(<Products />)}</Allow>,
           },
           {
             path: 'products/new',
@@ -63,41 +80,58 @@ const appRoutes: RouteObject[] = [
             path: 'products/:id/edit',
             element: <Allow roles={['owner', 'manager']}>{soon('Edit product')}</Allow>,
           },
-          { path: 'sales', element: soon('Sales') },
-          { path: 'sales/:id', element: soon('Sale detail') },
+
+          { path: 'sales', element: wrap(<Sales />) },
+          { path: 'sales/:id', element: wrap(<SaleDetail />) },
+
           {
             path: 'customers',
-            element: <Allow roles={['owner', 'manager']}>{soon('Customers')}</Allow>,
+            element: <Allow roles={['owner', 'manager']}>{wrap(<Customers />)}</Allow>,
           },
           {
             path: 'inventory',
-            element: <Allow roles={['owner', 'manager']}>{soon('Inventory')}</Allow>,
+            element: <Allow roles={['owner', 'manager']}>{wrap(<Inventory />)}</Allow>,
           },
+
           {
             path: 'suppliers',
-            element: <Allow roles={['owner', 'manager']}>{soon('Suppliers')}</Allow>,
+            element: <Allow roles={['owner', 'manager']}>{wrap(<Suppliers />)}</Allow>,
           },
           {
             path: 'purchase-orders',
-            element: <Allow roles={['owner', 'manager']}>{soon('Purchase orders')}</Allow>,
+            element: <Allow roles={['owner', 'manager']}>{wrap(<PurchaseOrders />)}</Allow>,
           },
+          {
+            path: 'purchase-orders/new',
+            element: <Allow roles={['owner', 'manager']}>{wrap(<PurchaseOrderForm />)}</Allow>,
+          },
+          {
+            path: 'purchase-orders/:id',
+            element: <Allow roles={['owner', 'manager']}>{wrap(<PurchaseOrderDetail />)}</Allow>,
+          },
+
           {
             path: 'invoices',
-            element: <Allow roles={['owner', 'manager']}>{soon('Invoices')}</Allow>,
+            element: <Allow roles={['owner', 'manager']}>{wrap(<Invoices />)}</Allow>,
           },
-          { path: 'users', element: <Allow roles={['owner']}>{soon('Users')}</Allow> },
+
+          {
+            path: 'users',
+            element: <Allow roles={['owner']}>{wrap(<Users />)}</Allow>,
+          },
           {
             path: 'invitations',
-            element: <Allow roles={['owner']}>{soon('Invitations')}</Allow>,
+            element: <Allow roles={['owner']}>{wrap(<Invitations />)}</Allow>,
           },
           {
             path: 'settings',
             element: <Allow roles={['owner']}>{wrap(<SettingsPage />)}</Allow>,
           },
-          { path: 'profile', element: soon('Profile') },
+          { path: 'profile', element: wrap(<Profile />) },
+
           {
             path: 'insights',
-            element: <Allow roles={['owner', 'manager']}>{soon('Insights')}</Allow>,
+            element: <Allow roles={['owner', 'manager']}>{wrap(<Insights />)}</Allow>,
           },
           {
             path: 'chat',
@@ -105,8 +139,9 @@ const appRoutes: RouteObject[] = [
           },
           {
             path: 'reports',
-            element: <Allow roles={['owner', 'manager']}>{soon('Reports')}</Allow>,
+            element: <Allow roles={['owner', 'manager']}>{wrap(<Reports />)}</Allow>,
           },
+
           { path: '403', element: soon('Access denied') },
           { path: '*', element: soon('Page not found') },
         ],

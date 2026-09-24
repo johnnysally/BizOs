@@ -1,21 +1,605 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
+import {
+  Search,
+  Plus,
+  Archive,
+  Truck,
+  Phone,
+  Mail,
+  MapPin,
+  Package as PackageIcon,
+} from 'lucide-react';
+import { Card } from '@/components/ui/Card';
+import { Button } from '@/components/ui/Button';
+import { Input } from '@/components/ui/Input';
+import { FormField } from '@/components/ui/FormField';
+import { Modal } from '@/components/ui/Modal';
+import { Badge } from '@/components/ui/Badge';
+import { Spinner } from '@/components/ui/Spinner';
+import { classNames } from '@/utils/classNames';
+import { useNotifications } from '@/context/NotificationContext';
+import { useClient } from '@/context/ClientContext';
+import { supplierApi } from '@/api/suppliers';
+import { formatCurrency } from '@/utils/currency';
+import { formatDate, relativeTime } from '@/utils/date';
+import { ROUTES, PAYMENT_LABELS } from '@/utils/constants';
+import type { Supplier } from '@/types/supplier';
 
-type Supplier = { id: number; name: string; contact: string; email: string; phone: string; outstanding: number; purchases: number; orders: number; status: 'Active' | 'Review'; category: string };
-const initialSuppliers: Supplier[] = [
-  { id: 1, name: 'Hydra Electric', contact: 'Nancy Wanjiku', email: 'nancy@hydra.co.ke', phone: '+254 712 100 201', outstanding: 96800, purchases: 1200000, orders: 28, status: 'Active', category: 'Electrical' },
-  { id: 2, name: 'Vanta Lighting', contact: 'Sam Otieno', email: 'sam@vanta.co.ke', phone: '+254 722 200 302', outstanding: 34500, purchases: 640000, orders: 19, status: 'Active', category: 'Lighting' },
-  { id: 3, name: 'PowerGrid Kenya', contact: 'Jane Muthoni', email: 'jane@powergrid.co.ke', phone: '+254 733 300 403', outstanding: 185100, purchases: 2400000, orders: 42, status: 'Review', category: 'Electrical' },
-];
-const money = (amount: number) => `KES ${amount.toLocaleString('en-KE')}`;
-export function Suppliers() {
-  const [suppliers, setSuppliers] = useState(initialSuppliers);
-  const [selectedId, setSelectedId] = useState(1);
+const PAGE_SIZE = 20;
+
+export default function Suppliers() {
+  const { settings } = useClient();
+  const { toast } = useNotifications();
+  const currency = (settings.currency as string) || 'KES';
+
+  const [items, setItems] = useState<Supplier[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [loading, setLoading] = useState(true);
+
   const [search, setSearch] = useState('');
-  const [showForm, setShowForm] = useState(false);
-  const [notice, setNotice] = useState('');
-  const [form, setForm] = useState({ name: '', contact: '', email: '', category: 'Electrical' });
-  const selected = suppliers.find((supplier) => supplier.id === selectedId) ?? suppliers[0];
-  const filtered = useMemo(() => suppliers.filter((supplier) => `${supplier.name} ${supplier.contact} ${supplier.category}`.toLowerCase().includes(search.toLowerCase())), [search, suppliers]);
-  const addSupplier = () => { if (!form.name.trim() || !form.contact.trim()) return; const id = Math.max(...suppliers.map((supplier) => supplier.id)) + 1; setSuppliers((current) => [...current, { id, name: form.name, contact: form.contact, email: form.email || 'No email', phone: 'Pending', outstanding: 0, purchases: 0, orders: 0, status: 'Active', category: form.category }]); setSelectedId(id); setForm({ name: '', contact: '', email: '', category: 'Electrical' }); setShowForm(false); setNotice('Supplier added'); };
-  return <div className="suppliers-workspace"><div className="panel suppliers-header"><div><p className="eyebrow">Procurement</p><h3>Suppliers</h3><p className="panel-subtitle">Manage vendor relationships, balances, categories, and purchase history.</p></div><button className="primary-button small" type="button" onClick={() => setShowForm((current) => !current)}>{showForm ? 'Close form' : 'Add supplier'}</button></div><div className="supplier-kpis"><div className="stat-card compact"><div className="stat-header"><span>Suppliers</span></div><div className="stat-value">{suppliers.length}</div><div className="stat-footer">Active vendors</div></div><div className="stat-card compact"><div className="stat-header"><span>Total purchases</span></div><div className="stat-value">{money(suppliers.reduce((sum, supplier) => sum + supplier.purchases, 0))}</div><div className="stat-footer">Lifetime procurement</div></div><div className="stat-card compact"><div className="stat-header"><span>Outstanding</span><span className="trend down">Review</span></div><div className="stat-value">{money(suppliers.reduce((sum, supplier) => sum + supplier.outstanding, 0))}</div><div className="stat-footer">Supplier balances</div></div><div className="stat-card compact"><div className="stat-header"><span>Open orders</span></div><div className="stat-value">{suppliers.reduce((sum, supplier) => sum + supplier.orders, 0)}</div><div className="stat-footer">Purchase orders</div></div></div>{showForm && <div className="panel supplier-form-panel"><div><p className="eyebrow">New supplier</p><h3>Add vendor profile</h3></div><div className="settings-form-grid"><label className="field"><span>Company name</span><input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="Supplier company" /></label><label className="field"><span>Primary contact</span><input value={form.contact} onChange={(event) => setForm({ ...form, contact: event.target.value })} placeholder="Contact person" /></label><label className="field"><span>Email</span><input type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} placeholder="contact@supplier.co.ke" /></label><label className="field"><span>Category</span><select value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value })}><option>Electrical</option><option>Lighting</option><option>Appliances</option><option>General supplies</option></select></label></div><button className="primary-button small" type="button" onClick={addSupplier}>Create supplier</button></div>}<div className="supplier-layout"><div className="panel"><div className="supplier-toolbar"><div><p className="eyebrow">Vendor directory</p><h3>Supplier accounts</h3></div><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search suppliers" aria-label="Search suppliers" /></div><div className="supplier-card-list">{filtered.map((supplier) => <button className={`supplier-card ${selectedId === supplier.id ? 'selected' : ''}`} key={supplier.id} type="button" onClick={() => setSelectedId(supplier.id)}><div className="supplier-card-top"><div><strong>{supplier.name}</strong><span>{supplier.contact} · {supplier.category}</span></div><span className={`status-badge ${supplier.status === 'Active' ? 'success' : 'warning'}`}>{supplier.status}</span></div><div className="supplier-card-metrics"><span><strong>{money(supplier.purchases)}</strong>Purchases</span><span><strong>{money(supplier.outstanding)}</strong>Outstanding</span><span><strong>{supplier.orders}</strong>Orders</span></div></button>)}</div></div><aside className="panel supplier-detail"><div className="panel-header"><div><p className="eyebrow">Supplier detail</p><h3>{selected.name}</h3></div><span className="status-badge success">{selected.status}</span></div><p className="supplier-detail-contact">{selected.contact} · {selected.email}</p><div className="supplier-detail-actions"><button className="primary-button small" type="button" onClick={() => setNotice(`Purchase order started for ${selected.name}`)}>New purchase</button><button className="secondary-button small" type="button" onClick={() => setNotice(`Statement requested from ${selected.name}`)}>Request statement</button></div><div className="supplier-detail-list"><div><span>Total purchases</span><strong>{money(selected.purchases)}</strong></div><div><span>Outstanding</span><strong>{money(selected.outstanding)}</strong></div><div><span>Purchase orders</span><strong>{selected.orders}</strong></div><div><span>Phone</span><strong>{selected.phone}</strong></div><div><span>Category</span><strong>{selected.category}</strong></div></div></aside></div>{notice && <div className="pos-notice" role="status">{notice}</div>}</div>;
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+
+  const [selected, setSelected] = useState<Supplier | null>(null);
+  const [formOpen, setFormOpen] = useState(false);
+  const [editing, setEditing] = useState<Supplier | null>(null);
+
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setDebouncedSearch(search);
+      setPage(1);
+    }, 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await supplierApi.list({
+        page,
+        limit: PAGE_SIZE,
+        search: debouncedSearch || undefined,
+        active: true,
+      });
+      setItems(res.data);
+      setTotal(res.meta.total);
+      if (res.data.length && !selected) setSelected(res.data[0]);
+    } catch (e) {
+      toast({
+        type: 'error',
+        message: (e as { message?: string }).message || 'Could not load suppliers',
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, [page, debouncedSearch, toast, selected]);
+
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, debouncedSearch]);
+
+  const stats = useMemo(() => {
+    const totalSpend = items.reduce((s, x) => s + (x.totalSpent || 0), 0);
+    const withOrders = items.filter((s) => s.lastOrderAt).length;
+    return { totalSpend, withOrders };
+  }, [items]);
+
+  const archive = async (s: Supplier) => {
+    if (!window.confirm(`Archive ${s.name}?`)) return;
+    try {
+      await supplierApi.remove(s._id);
+      toast({ type: 'success', message: 'Supplier archived' });
+      setSelected(null);
+      load();
+    } catch (e) {
+      toast({
+        type: 'error',
+        message: (e as { message?: string }).message || 'Archive failed',
+      });
+    }
+  };
+
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+  return (
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold text-fg">Suppliers</h1>
+          <p className="text-sm text-muted mt-1">
+            {total} supplier{total === 1 ? '' : 's'}
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <Link to={ROUTES.purchaseOrders}>
+            <Button size="sm" variant="outline" icon={<PackageIcon size={14} />}>
+              Purchase orders
+            </Button>
+          </Link>
+          <Button
+            icon={<Plus size={16} />}
+            onClick={() => {
+              setEditing(null);
+              setFormOpen(true);
+            }}
+          >
+            Add supplier
+          </Button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <Kpi label="Suppliers" value={String(total)} hint="Active vendors" />
+        <Kpi
+          label="Lifetime spend"
+          value={formatCurrency(stats.totalSpend, currency)}
+          hint="This page"
+        />
+        <Kpi label="With orders" value={String(stats.withOrders)} hint="Have purchase history" />
+        <Kpi
+          label="Avg per vendor"
+          value={formatCurrency(
+            items.length > 0 ? Math.round(stats.totalSpend / items.length) : 0,
+            currency
+          )}
+          hint="Lifetime"
+        />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_400px] gap-4">
+        <Card padded={false}>
+          <div className="p-4 border-b border-border">
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search name, phone, email, contact..."
+              icon={<Search size={14} />}
+            />
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-elevated border-b border-border">
+                <tr>
+                  <th className="px-4 py-3 text-left font-medium text-muted">Supplier</th>
+                  <th className="px-4 py-3 text-left font-medium text-muted">Contact</th>
+                  <th className="px-4 py-3 text-right font-medium text-muted">Lifetime spend</th>
+                  <th className="px-4 py-3 text-left font-medium text-muted">Last order</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {loading ? (
+                  <tr>
+                    <td colSpan={4} className="px-4 py-16 text-center">
+                      <Spinner />
+                    </td>
+                  </tr>
+                ) : items.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="px-4 py-16 text-center text-muted">
+                      <Truck size={32} className="mx-auto mb-2 opacity-40" />
+                      No suppliers yet.
+                    </td>
+                  </tr>
+                ) : (
+                  items.map((s) => (
+                    <tr
+                      key={s._id}
+                      onClick={() => setSelected(s)}
+                      className={classNames(
+                        'hover:bg-elevated cursor-pointer transition',
+                        selected?._id === s._id && 'bg-brand-50 dark:bg-brand-500/10'
+                      )}
+                    >
+                      <td className="px-4 py-3">
+                        <p className="font-medium text-fg">{s.name}</p>
+                        {s.contactName && (
+                          <p className="text-xs text-muted mt-0.5">{s.contactName}</p>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-muted">
+                        {s.phone || s.email || '—'}
+                      </td>
+                      <td className="px-4 py-3 text-right text-fg">
+                        {formatCurrency(s.totalSpent || 0, currency)}
+                      </td>
+                      <td className="px-4 py-3 text-muted">
+                        {s.lastOrderAt ? relativeTime(s.lastOrderAt) : 'Never'}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between px-4 py-3 border-t border-border bg-elevated text-sm">
+              <span className="text-muted">
+                Page {page} of {totalPages} · {total} total
+              </span>
+              <div className="flex gap-1">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={page <= 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                >
+                  Prev
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={page >= totalPages}
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                >
+                  Next
+                </Button>
+              </div>
+            </div>
+          )}
+        </Card>
+
+        {selected && (
+          <SupplierDetail
+            supplier={selected}
+            currency={currency}
+            onEdit={() => {
+              setEditing(selected);
+              setFormOpen(true);
+            }}
+            onArchive={() => archive(selected)}
+          />
+        )}
+      </div>
+
+      {formOpen && (
+        <SupplierFormModal
+          supplier={editing}
+          onClose={() => setFormOpen(false)}
+          onSaved={() => {
+            setFormOpen(false);
+            load();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function Kpi({ label, value, hint }: { label: string; value: string; hint: string }) {
+  return (
+    <div className="bg-surface border border-border rounded-lg p-4">
+      <p className="text-xs text-muted">{label}</p>
+      <p className="text-xl font-semibold text-fg mt-1 truncate">{value}</p>
+      <p className="text-xs text-muted mt-1">{hint}</p>
+    </div>
+  );
+}
+
+function SupplierDetail({
+  supplier,
+  currency,
+  onEdit,
+  onArchive,
+}: {
+  supplier: Supplier;
+  currency: string;
+  onEdit: () => void;
+  onArchive: () => void;
+}) {
+  const { toast } = useNotifications();
+  const [tab, setTab] = useState<'overview' | 'orders'>('overview');
+  const [orders, setOrders] = useState<
+    Array<{
+      _id: string;
+      poNumber: string;
+      status: string;
+      total: number;
+      createdAt: string;
+    }>
+  >([]);
+  const [loadingOrders, setLoadingOrders] = useState(false);
+
+  useEffect(() => {
+    if (tab !== 'orders') return;
+    let active = true;
+    setLoadingOrders(true);
+    supplierApi
+      .orders(supplier._id, { page: 1, limit: 20 })
+      .then((res) => {
+        if (!active) return;
+        setOrders(
+          (res.data as Array<{
+            _id: string;
+            poNumber: string;
+            status: string;
+            total: number;
+            createdAt: string;
+          }>) || []
+        );
+      })
+      .catch(() =>
+        toast({ type: 'error', message: 'Could not load supplier orders' })
+      )
+      .finally(() => active && setLoadingOrders(false));
+    return () => {
+      active = false;
+    };
+  }, [tab, supplier._id, toast]);
+
+  return (
+    <Card padded={false}>
+      <div className="p-5 border-b border-border">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className="text-base font-semibold text-fg truncate">
+              {supplier.name}
+            </h2>
+            {supplier.contactName && (
+              <p className="text-xs text-muted mt-1">{supplier.contactName}</p>
+            )}
+          </div>
+          <Badge variant={supplier.active ? 'success' : 'neutral'}>
+            {supplier.active ? 'Active' : 'Archived'}
+          </Badge>
+        </div>
+
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Link to={`${ROUTES.purchaseOrders}?supplier=${supplier._id}`} className="flex-1">
+            <Button size="sm" fullWidth icon={<Plus size={12} />}>
+              New order
+            </Button>
+          </Link>
+          <Button size="sm" variant="outline" onClick={onEdit}>
+            Edit
+          </Button>
+          <Button size="sm" variant="outline" icon={<Archive size={12} />} onClick={onArchive}>
+            Archive
+          </Button>
+        </div>
+      </div>
+
+      <div className="flex border-b border-border">
+        <button
+          type="button"
+          onClick={() => setTab('overview')}
+          className={classNames(
+            'flex-1 px-4 py-2.5 text-sm font-medium transition',
+            tab === 'overview'
+              ? 'text-brand-700 dark:text-brand-300 border-b-2 border-brand-600'
+              : 'text-muted hover:text-fg'
+          )}
+        >
+          Overview
+        </button>
+        <button
+          type="button"
+          onClick={() => setTab('orders')}
+          className={classNames(
+            'flex-1 px-4 py-2.5 text-sm font-medium transition',
+            tab === 'orders'
+              ? 'text-brand-700 dark:text-brand-300 border-b-2 border-brand-600'
+              : 'text-muted hover:text-fg'
+          )}
+        >
+          Orders
+        </button>
+      </div>
+
+      {tab === 'overview' && (
+        <div className="p-5 space-y-4 text-sm">
+          <div className="space-y-2">
+            {supplier.phone && (
+              <div className="flex items-center gap-2 text-muted">
+                <Phone size={14} className="shrink-0" />
+                <span className="truncate">{supplier.phone}</span>
+              </div>
+            )}
+            {supplier.email && (
+              <div className="flex items-center gap-2 text-muted">
+                <Mail size={14} className="shrink-0" />
+                <span className="truncate">{supplier.email}</span>
+              </div>
+            )}
+            {supplier.address && (
+              <div className="flex items-center gap-2 text-muted">
+                <MapPin size={14} className="shrink-0" />
+                <span className="truncate">{supplier.address}</span>
+              </div>
+            )}
+          </div>
+
+          <div className="border-t border-border pt-3 space-y-2">
+            <Row
+              label="Lifetime spend"
+              value={formatCurrency(supplier.totalSpent || 0, currency)}
+            />
+            <Row
+              label="Last order"
+              value={supplier.lastOrderAt ? formatDate(supplier.lastOrderAt) : 'Never'}
+            />
+            <Row label="Added" value={formatDate(supplier.createdAt)} />
+          </div>
+
+          {supplier.notes && (
+            <div className="border-t border-border pt-3">
+              <p className="text-xs text-muted mb-1">Notes</p>
+              <p className="text-sm text-fg whitespace-pre-wrap">{supplier.notes}</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {tab === 'orders' && (
+        <div className="p-5">
+          {loadingOrders ? (
+            <div className="flex justify-center py-8">
+              <Spinner />
+            </div>
+          ) : orders.length === 0 ? (
+            <p className="text-sm text-muted py-8 text-center">
+              No purchase orders for this supplier yet.
+            </p>
+          ) : (
+            <ul className="divide-y divide-border -mx-5">
+              {orders.map((po) => (
+                <li key={po._id}>
+                  <Link
+                    to={ROUTES.purchaseOrderDetail(po._id)}
+                    className="flex items-center justify-between gap-3 px-5 py-3 hover:bg-elevated transition"
+                  >
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-fg font-mono truncate">
+                        {po.poNumber}
+                      </p>
+                      <p className="text-xs text-muted mt-0.5">
+                        {relativeTime(po.createdAt)}
+                      </p>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <p className="text-sm font-medium text-fg">
+                        {formatCurrency(po.total, currency)}
+                      </p>
+                      <p className="text-xs text-muted capitalize">{po.status}</p>
+                    </div>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function Row({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <span className="text-muted">{label}</span>
+      <span className="text-fg text-right truncate">{value}</span>
+    </div>
+  );
+}
+
+function SupplierFormModal({
+  supplier,
+  onClose,
+  onSaved,
+}: {
+  supplier: Supplier | null;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const { toast } = useNotifications();
+  const isEdit = Boolean(supplier);
+  const [form, setForm] = useState({
+    name: supplier?.name || '',
+    contactName: supplier?.contactName || '',
+    phone: supplier?.phone || '',
+    email: supplier?.email || '',
+    address: supplier?.address || '',
+    notes: supplier?.notes || '',
+  });
+  const [saving, setSaving] = useState(false);
+
+  const submit = async () => {
+    if (!form.name.trim()) {
+      toast({ type: 'error', message: 'Name is required' });
+      return;
+    }
+    setSaving(true);
+    try {
+      const payload = {
+        name: form.name.trim(),
+        contactName: form.contactName.trim() || undefined,
+        phone: form.phone.trim() || undefined,
+        email: form.email.trim() || undefined,
+        address: form.address.trim() || undefined,
+        notes: form.notes.trim() || undefined,
+      };
+      if (isEdit && supplier) {
+        await supplierApi.update(supplier._id, payload);
+        toast({ type: 'success', message: 'Supplier updated' });
+      } else {
+        await supplierApi.create(payload);
+        toast({ type: 'success', message: 'Supplier added' });
+      }
+      onSaved();
+    } catch (e) {
+      toast({
+        type: 'error',
+        message: (e as { message?: string }).message || 'Save failed',
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title={isEdit ? 'Edit supplier' : 'Add supplier'}
+      size="md"
+      footer={
+        <>
+          <Button variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button loading={saving} onClick={submit}>
+            {isEdit ? 'Save changes' : 'Create'}
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <FormField label="Company name" required>
+          <Input
+            autoFocus
+            value={form.name}
+            onChange={(e) => setForm({ ...form, name: e.target.value })}
+          />
+        </FormField>
+        <FormField label="Contact person">
+          <Input
+            value={form.contactName}
+            onChange={(e) => setForm({ ...form, contactName: e.target.value })}
+          />
+        </FormField>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <FormField label="Phone">
+            <Input
+              value={form.phone}
+              onChange={(e) => setForm({ ...form, phone: e.target.value })}
+              placeholder="+254..."
+            />
+          </FormField>
+          <FormField label="Email">
+            <Input
+              type="email"
+              value={form.email}
+              onChange={(e) => setForm({ ...form, email: e.target.value })}
+            />
+          </FormField>
+        </div>
+        <FormField label="Address">
+          <Input
+            value={form.address}
+            onChange={(e) => setForm({ ...form, address: e.target.value })}
+          />
+        </FormField>
+        <FormField label="Notes">
+          <Input
+            value={form.notes}
+            onChange={(e) => setForm({ ...form, notes: e.target.value })}
+            placeholder="Payment terms, delivery preferences, etc."
+          />
+        </FormField>
+      </div>
+    </Modal>
+  );
 }

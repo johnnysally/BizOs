@@ -8,6 +8,15 @@ export interface ReceiptResponse {
     address: string | null;
     phone: string | null;
   };
+  settings: {
+    taxRate: number;
+    taxInclusive: boolean;
+    receiptShowLogo: boolean;
+    receiptShowTax: boolean;
+    receiptShowCustomer: boolean;
+    receiptShowCashier: boolean;
+    receiptFooter: string;
+  };
   sale: Sale;
   footer: string;
 }

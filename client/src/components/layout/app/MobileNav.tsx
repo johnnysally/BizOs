@@ -4,9 +4,7 @@ import {
   Receipt,
   Package,
   BarChart3,
-  Sparkles,
-  Users,
-  MoreHorizontal,
+  Settings as SettingsIcon,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { classNames } from '@/utils/classNames';
@@ -17,15 +15,15 @@ const NAV = [
   { to: ROUTES.sales, label: 'Sales', icon: Receipt, roles: [ROLES.OWNER, ROLES.MANAGER, ROLES.CASHIER] },
   { to: ROUTES.products, label: 'Products', icon: Package, roles: [ROLES.OWNER, ROLES.MANAGER] },
   { to: ROUTES.reports, label: 'Reports', icon: BarChart3, roles: [ROLES.OWNER, ROLES.MANAGER] },
-  { to: ROUTES.insights, label: 'Insights', icon: Sparkles, roles: [ROLES.OWNER, ROLES.MANAGER] },
-  { to: ROUTES.users, label: 'Users', icon: Users, roles: [ROLES.OWNER] },
-  { to: ROUTES.settings, label: 'More', icon: MoreHorizontal, roles: [ROLES.OWNER, ROLES.MANAGER] },
+  { to: ROUTES.settings, label: 'More', icon: SettingsIcon, roles: [ROLES.OWNER, ROLES.MANAGER] },
 ];
 
 export function MobileNav() {
   const { user } = useAuth();
   const role = user?.role || ROLES.CASHIER;
   const items = NAV.filter((item) => item.roles.includes(role)).slice(0, 5);
+
+  if (items.length === 0) return null;
 
   return (
     <nav className="md:hidden fixed bottom-0 left-0 right-0 z-30 bg-surface border-t border-border flex">

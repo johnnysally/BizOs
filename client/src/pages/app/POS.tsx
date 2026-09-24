@@ -1,152 +1,512 @@
-﻿import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Search, Package as PackageIcon } from 'lucide-react';
+import { Input } from '@/components/ui/Input';
+import { Select } from '@/components/ui/Select';
+import { Badge } from '@/components/ui/Badge';
+import { Spinner } from '@/components/ui/Spinner';
+import { classNames } from '@/utils/classNames';
+import { useAuth } from '@/context/AuthContext';
+import { useClient } from '@/context/ClientContext';
+import { useNotifications } from '@/context/NotificationContext';
+import { productApi } from '@/api/products';
+import { customerApi } from '@/api/customers';
+import { heldSalesApi } from '@/api/heldSales';
+import { formatCurrency } from '@/utils/currency';
+import { Cart, type CartItem } from '@/components/pos/Cart';
+import { CustomerPicker } from '@/components/pos/CustomerPicker';
+import { PaymentModal } from '@/components/pos/PaymentModal';
+import { SuccessModal } from '@/components/pos/SuccessModal';
+import { HoldSaleModal } from '@/components/pos/HoldSaleModal';
+import { HeldSalesDrawer } from '@/components/pos/HeldSalesDrawer';
+import type { Product } from '@/types/product';
+import type { Customer } from '@/types/customer';
+import type { Sale } from '@/types/sale';
+import type { HeldSale } from '@/types/heldSale';
 
-type Product = { name: string; sku: string; category: string; price: number; stock: number; unit: string };
-type CartItem = Product & { quantity: number };
-type PaymentMethod = 'M-Pesa' | 'Cash' | 'Card' | 'Credit';
-type HeldSale = { id: number; customer: string; cart: CartItem[]; discount: number; note: string };
+const PAGE_SIZE = 60;
 
-const products: Product[] = [
-  { name: '2.5mm Twin Cable', sku: 'CAB-2.5-TW', category: 'Cables', price: 8500, stock: 12, unit: 'coil' },
-  { name: 'LED Bulb 12W', sku: 'LGT-12W', category: 'Lighting', price: 320, stock: 42, unit: 'piece' },
-  { name: '20A MCB', sku: 'BRK-20A', category: 'Switches', price: 650, stock: 7, unit: 'piece' },
-  { name: 'PVC Conduit 20mm', sku: 'CON-20-PVC', category: 'Cables', price: 1800, stock: 9, unit: 'length' },
-  { name: '13A Double Socket', sku: 'SOC-13A-D', category: 'Sockets', price: 450, stock: 38, unit: 'piece' },
-  { name: '16-inch Stand Fan', sku: 'FAN-16-ST', category: 'Appliances', price: 6400, stock: 0, unit: 'piece' },
-];
+export default function POS() {
+  const { user } = useAuth();
+  const { settings, enabledPaymentMethods, status: clientStatus, load } = useClient();
+  const { toast } = useNotifications();
+  const searchRef = useRef<HTMLInputElement>(null);
 
-const customers = ['Walk-in customer', 'James Ndungu', 'Sunset Homes', 'Hydra Construction'];
-const money = (amount: number) => `KES ${amount.toLocaleString('en-KE')}`;
-
-export function POS() {
+  const [products, setProducts] = useState<Product[]>([]);
+  const [loadingProducts, setLoadingProducts] = useState(true);
   const [search, setSearch] = useState('');
-  const [barcode, setBarcode] = useState('');
-  const [category, setCategory] = useState('All');
-  const [cart, setCart] = useState<CartItem[]>([{
-    ...products[0], quantity: 1,
-  }, { ...products[2], quantity: 2 }, { ...products[1], quantity: 1 }]);
-  const [customer, setCustomer] = useState(customers[0]);
-  const [discount, setDiscount] = useState(0);
-  const [showPayment, setShowPayment] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('M-Pesa');
-  const [amountReceived, setAmountReceived] = useState('');
-  const [completedSale, setCompletedSale] = useState(false);
-  const [heldSales, setHeldSales] = useState(0);
-  const [heldCarts, setHeldCarts] = useState<HeldSale[]>([]);
-  const [splitPayment, setSplitPayment] = useState(false);
-  const [splitMethod, setSplitMethod] = useState<PaymentMethod>('Cash');
-  const [splitAmount, setSplitAmount] = useState('');
-  const [customerPhone, setCustomerPhone] = useState('');
-  const [showCustomerForm, setShowCustomerForm] = useState(false);
-  const [note, setNote] = useState('');
-  const [receiptDelivery, setReceiptDelivery] = useState<'Print' | 'Email' | 'SMS'>('Print');
-  const [notice, setNotice] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [category, setCategory] = useState('');
 
-  const categories = ['All', ...new Set(products.map((product) => product.category))];
-  const visibleProducts = products.filter((product) => {
-    const matchesCategory = category === 'All' || product.category === category;
-    const query = `${product.name} ${product.sku}`.toLowerCase();
-    return matchesCategory && query.includes(search.toLowerCase());
-  });
-  const subtotal = cart.reduce((total, item) => total + item.price * item.quantity, 0);
-  const discountAmount = Math.round(subtotal * discount / 100);
-  const taxableAmount = subtotal - discountAmount;
-  const tax = Math.round(taxableAmount * 0.16);
-  const total = taxableAmount + tax;
-  const change = Math.max(0, Number(amountReceived || 0) - total);
+  const [cart, setCart] = useState<CartItem[]>([]);
+  const [discount, setDiscount] = useState('');
+  const [currentHeldId, setCurrentHeldId] = useState<string | null>(null);
+
+  const [customer, setCustomer] = useState<Customer | null>(null);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [customerPickerOpen, setCustomerPickerOpen] = useState(false);
+
+  const [paymentOpen, setPaymentOpen] = useState(false);
+  const [completedSale, setCompletedSale] = useState<Sale | null>(null);
+  const [lastChange, setLastChange] = useState(0);
+
+  const [heldCount, setHeldCount] = useState(0);
+  const [heldDrawerOpen, setHeldDrawerOpen] = useState(false);
+  const [holdModalOpen, setHoldModalOpen] = useState(false);
+  const [holding, setHolding] = useState(false);
 
   useEffect(() => {
-    const handleShortcut = (event: KeyboardEvent) => {
-      if (event.key === 'F2') { event.preventDefault(); document.querySelector<HTMLInputElement>('.search-field.big input')?.focus(); }
-      if (event.key === 'F4' && cart.length > 0) { event.preventDefault(); setShowPayment(true); }
-      if (event.key === 'Escape') { setShowPayment(false); setCompletedSale(false); setShowCustomerForm(false); }
-    };
-    window.addEventListener('keydown', handleShortcut);
-    return () => window.removeEventListener('keydown', handleShortcut);
-  }, [cart.length]);
+    if (clientStatus === 'idle') load();
+  }, [clientStatus, load]);
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 250);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  const loadProducts = useCallback(async () => {
+    setLoadingProducts(true);
+    try {
+      const res = await productApi.list({
+        page: 1,
+        limit: PAGE_SIZE,
+        search: debouncedSearch || undefined,
+        category: category || undefined,
+        active: true,
+      });
+      setProducts(res.data);
+    } catch (e) {
+      toast({
+        type: 'error',
+        message: (e as { message?: string }).message || 'Could not load products',
+      });
+    } finally {
+      setLoadingProducts(false);
+    }
+  }, [debouncedSearch, category, toast]);
+
+  useEffect(() => {
+    loadProducts();
+  }, [loadProducts]);
+
+  useEffect(() => {
+    customerApi
+      .list({ page: 1, limit: 200 })
+      .then((res) => setCustomers(res.data))
+      .catch(() => undefined);
+  }, []);
+
+  const refreshHeldCount = useCallback(async () => {
+    try {
+      const list = await heldSalesApi.list();
+      setHeldCount(list.length);
+    } catch {
+      /* silent */
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshHeldCount();
+  }, [refreshHeldCount]);
+
+  const currency = (settings.currency as string) || 'KES';
+
+  const rawTaxRate = (settings.taxRate as number) ?? 0;
+  const taxRate = Number.isFinite(rawTaxRate) && rawTaxRate > 0 ? rawTaxRate : 0;
+  const taxInclusive = settings.taxInclusive === true;
+
+  const subtotal = useMemo(
+    () => cart.reduce((sum, item) => sum + item.price * item.qty, 0),
+    [cart]
+  );
+
+  const discountValue = useMemo(() => {
+    const n = Number(discount);
+    if (!Number.isFinite(n) || n <= 0) return 0;
+    if (n > 100) return subtotal;
+    return Math.round((subtotal * n) / 100);
+  }, [discount, subtotal]);
+
+  const taxAmount = useMemo(() => {
+    if (taxRate <= 0) return 0;
+    const base = Math.max(0, subtotal - discountValue);
+    if (taxInclusive) {
+      return Math.round(base * (taxRate / (100 + taxRate)));
+    }
+    return Math.round(base * (taxRate / 100));
+  }, [subtotal, discountValue, taxRate, taxInclusive]);
+
+  const total = useMemo(() => {
+    const base = Math.max(0, subtotal - discountValue);
+    if (taxRate <= 0) return base;
+    if (taxInclusive) return base;
+    return base + taxAmount;
+  }, [subtotal, discountValue, taxRate, taxInclusive, taxAmount]);
 
   const addToCart = (product: Product) => {
-    if (product.stock === 0) return;
-    setCart((current) => {
-      const existing = current.find((item) => item.sku === product.sku);
-      if (existing) return current.map((item) => item.sku === product.sku ? { ...item, quantity: Math.min(item.quantity + 1, product.stock) } : item);
-      return [...current, { ...product, quantity: 1 }];
+    if (product.stock <= 0) {
+      toast({ type: 'warning', message: `${product.name} is out of stock` });
+      return;
+    }
+    setCart((cur) => {
+      const existing = cur.find((i) => i.productId === product._id);
+      if (existing) {
+        if (existing.qty >= product.stock) {
+          toast({ type: 'warning', message: `Only ${product.stock} in stock` });
+          return cur;
+        }
+        return cur.map((i) =>
+          i.productId === product._id ? { ...i, qty: i.qty + 1 } : i
+        );
+      }
+      return [
+        ...cur,
+        {
+          productId: product._id,
+          name: product.name,
+          sku: product.sku || undefined,
+          price: product.price,
+          qty: 1,
+          stock: product.stock,
+          unit: product.unit,
+        },
+      ];
     });
-    setNotice(`${product.name} added to sale`);
   };
 
-  const changeQuantity = (sku: string, delta: number) => setCart((current) => current.flatMap((item) => {
-    if (item.sku !== sku) return [item];
-    const quantity = item.quantity + delta;
-    return quantity > 0 && quantity <= item.stock ? [{ ...item, quantity }] : quantity <= 0 ? [] : [item];
-  }));
-
-  const addBarcode = () => {
-    const product = products.find((item) => item.sku.toLowerCase() === barcode.trim().toLowerCase());
-    if (product) addToCart(product);
-    else setNotice('No product found for that SKU');
-    setBarcode('');
+  const changeQty = (productId: string, delta: number) => {
+    setCart((cur) =>
+      cur.flatMap((item) => {
+        if (item.productId !== productId) return [item];
+        const next = item.qty + delta;
+        if (next <= 0) return [];
+        if (next > item.stock) {
+          toast({ type: 'warning', message: `Only ${item.stock} in stock` });
+          return [item];
+        }
+        return [{ ...item, qty: next }];
+      })
+    );
   };
 
-  const holdSale = () => {
+  const removeItem = (productId: string) =>
+    setCart((cur) => cur.filter((i) => i.productId !== productId));
+
+  const clearCart = () => {
     if (!cart.length) return;
-    setHeldCarts((current) => [...current, { id: Date.now(), customer, cart, discount, note }]);
-    setHeldSales((current) => current + 1);
+    if (!window.confirm('Clear the current sale?')) return;
+    const held = currentHeldId;
     setCart([]);
-    setNotice('Sale held for later');
+    setDiscount('');
+    setCustomer(null);
+    setCurrentHeldId(null);
+    if (held) {
+      heldSalesApi
+        .remove(held)
+        .then(refreshHeldCount)
+        .catch(() => undefined);
+    }
   };
 
-  const restoreSale = (held: HeldSale) => {
-    setCart(held.cart); setCustomer(held.customer); setDiscount(held.discount); setNote(held.note);
-    setHeldCarts((current) => current.filter((item) => item.id !== held.id));
-    setNotice('Held sale restored');
+  const resetSale = () => {
+    setCart([]);
+    setDiscount('');
+    setCustomer(null);
+    setCurrentHeldId(null);
+    setCompletedSale(null);
+    setLastChange(0);
+    searchRef.current?.focus();
   };
 
-  const saveCustomer = () => {
-    if (!customerPhone.trim()) return;
-    setNotice(`${customer} linked to ${customerPhone}`);
-    setShowCustomerForm(false);
+  const holdSale = async (payload: { label: string; note: string }) => {
+    setHolding(true);
+    try {
+      await heldSalesApi.create({
+        items: cart.map((i) => ({
+          productId: i.productId,
+          name: i.name,
+          sku: i.sku,
+          price: i.price,
+          qty: i.qty,
+          stock: i.stock,
+          unit: i.unit,
+        })),
+        label: payload.label,
+        note: payload.note,
+        customerId: customer?.id || customer?._id,
+        discount,
+      });
+      toast({ type: 'success', message: 'Sale held' });
+      setCart([]);
+      setDiscount('');
+      setCustomer(null);
+      setCurrentHeldId(null);
+      setHoldModalOpen(false);
+      refreshHeldCount();
+    } catch (e) {
+      toast({
+        type: 'error',
+        message: (e as { message?: string }).message || 'Could not hold sale',
+      });
+    } finally {
+      setHolding(false);
+    }
   };
 
-  const finishSale = () => {
-    setShowPayment(false);
-    setCompletedSale(true);
+  const resumeHeld = (held: HeldSale) => {
+    setCart(
+      held.items.map((i) => ({
+        productId: i.productId,
+        name: i.name,
+        sku: i.sku || undefined,
+        price: i.price,
+        qty: i.qty,
+        stock: i.stock,
+        unit: i.unit || undefined,
+      }))
+    );
+    setDiscount(held.discount || '');
+    const match = customers.find((c) => (c.id || c._id) === held.customerId);
+    setCustomer(match || null);
+    setCurrentHeldId(held._id);
+    setHeldDrawerOpen(false);
+    toast({ type: 'success', message: `Resumed: ${held.label}` });
   };
 
-  const paymentReady = splitPayment ? Number(splitAmount) > 0 && Number(splitAmount) < total && Number(amountReceived) >= total - Number(splitAmount) : paymentMethod === 'Credit' || Number(amountReceived) >= total;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'F2') {
+        e.preventDefault();
+        searchRef.current?.focus();
+      }
+      if (e.key === 'F4' && cart.length > 0 && !paymentOpen && !completedSale) {
+        e.preventDefault();
+        setPaymentOpen(true);
+      }
+      if (e.key === 'Escape') {
+        setPaymentOpen(false);
+        setCustomerPickerOpen(false);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [cart.length, paymentOpen, completedSale]);
+
+  const categories = useMemo(() => {
+    const fromProducts = products
+      .map((p) => p.category)
+      .filter(Boolean) as string[];
+    return Array.from(new Set(fromProducts)).sort();
+  }, [products]);
+
+  if (clientStatus === 'loading' || clientStatus === 'idle') {
+    return (
+      <div className="flex items-center justify-center py-24">
+        <Spinner size="lg" />
+      </div>
+    );
+  }
 
   return (
-    <div className="pos-dashboard">
-      <div className="pos-shell">
-        <div className="pos-main">
-          <div className="pos-heading"><div><p className="eyebrow">Point of sale</p><h3>New transaction</h3></div><span className="status-pill online"><span className="dot" />Register open</span></div>
-          <div className="pos-toolbar">
-            <div className="search-field big"><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search products or SKU" /></div>
-            <button className="secondary-button small" type="button" onClick={() => setSearch('')}>Clear</button>
+    <div className="h-[calc(100vh-4rem)] flex flex-col lg:flex-row bg-bg">
+      <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
+        <div className="shrink-0 p-4 border-b border-border bg-surface">
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <div className="min-w-0">
+              <h1 className="text-lg font-semibold text-fg leading-none">
+                Point of sale
+              </h1>
+              <p className="text-xs text-muted mt-1">
+                {user?.fullName?.split(' ')[0]} · Register 01
+              </p>
+            </div>
+            <Badge variant="success" dot>
+              Open
+            </Badge>
           </div>
-          <div className="barcode-row"><input value={barcode} onChange={(event) => setBarcode(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && addBarcode()} placeholder="Scan or enter SKU, e.g. CAB-2.5-TW" aria-label="Scan barcode or enter SKU" /><button className="secondary-button small" type="button" onClick={addBarcode}>Add SKU</button></div>
 
-          <div className="category-row">{categories.map((item) => <button key={item} type="button" className={`category-chip ${category === item ? 'active' : ''}`} onClick={() => setCategory(item)}>{item}</button>)}</div>
-          <div className="product-grid">
-            {visibleProducts.map((product) => <div key={product.sku} className="product-card"><div className="product-visual"><span className="image-badge">{product.stock === 0 ? 'Out of stock' : product.stock < 10 ? 'Low stock' : 'Available'}</span></div><div className="product-meta"><strong>{product.name}</strong><small className="sku-label">{product.sku} · {product.unit}</small><div className="product-price-row"><span>{money(product.price)}</span><small>{product.stock} left</small></div><button className="primary-button small wide" type="button" onClick={() => addToCart(product)} disabled={product.stock === 0}>{product.stock === 0 ? 'Unavailable' : 'Add to cart'}</button></div></div>)}
+          <div className="flex flex-col sm:flex-row gap-2">
+            <div className="flex-1">
+              <Input
+                ref={searchRef}
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search products or SKU (F2)"
+                icon={<Search size={14} />}
+              />
+            </div>
+            {categories.length > 0 && (
+              <Select
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+                options={[
+                  { value: '', label: 'All categories' },
+                  ...categories.map((c) => ({ value: c, label: c })),
+                ]}
+              />
+            )}
           </div>
-          {notice && <div className="pos-notice" role="status">{notice}</div>}
         </div>
 
-        <aside className="cart-sheet">
-          <div className="cart-header"><div><p className="eyebrow">Register 01</p><h3>Current sale</h3></div><span className="status-badge neutral">{cart.reduce((count, item) => count + item.quantity, 0)} items</span></div>
-          <label className="pos-field"><span>Customer</span><div className="customer-select-row"><select value={customer} onChange={(event) => setCustomer(event.target.value)}>{customers.map((item) => <option key={item}>{item}</option>)}</select><button className="secondary-button small" type="button" onClick={() => setShowCustomerForm((current) => !current)}>+ Customer</button></div></label>
-          {showCustomerForm && <div className="pos-customer-form"><input value={customerPhone} onChange={(event) => setCustomerPhone(event.target.value)} placeholder="Customer phone" aria-label="Customer phone" /><button className="secondary-button small" type="button" onClick={saveCustomer}>Link</button></div>}
-          <div className="cart-items">{cart.length === 0 ? <div className="empty-cart">Your cart is empty.<span>Add products to begin this sale.</span></div> : cart.map((item) => <div key={item.sku} className="cart-item"><div className="cart-item-main"><div><strong>{item.name}</strong><small>{money(item.price)} each</small></div><span className="line-price">{money(item.price * item.quantity)}</span></div><div className="quantity-row"><div className="qty-control"><button className="qty-button" type="button" onClick={() => changeQuantity(item.sku, -1)}>-</button><span>{item.quantity}</span><button className="qty-button" type="button" onClick={() => changeQuantity(item.sku, 1)}>+</button></div><button className="meta-link" type="button" onClick={() => setCart((current) => current.filter((entry) => entry.sku !== item.sku))}>Remove</button></div></div>)}</div>
-          <div className="discount-row"><span>Discount</span><div className="discount-control"><input type="number" min="0" max="100" value={discount} onChange={(event) => setDiscount(Math.min(100, Math.max(0, Number(event.target.value))))} /><span>%</span></div></div>
-          <label className="pos-note-field"><span>Sale note</span><input value={note} onChange={(event) => setNote(event.target.value)} placeholder="Optional note for this transaction" /></label>
-          <div className="totals-box"><div className="line-total"><span>Subtotal</span><strong>{money(subtotal)}</strong></div><div className="line-total"><span>Discount</span><strong>- {money(discountAmount)}</strong></div><div className="line-total"><span>VAT (16%)</span><strong>{money(tax)}</strong></div><div className="line-total highlight"><span>Total</span><strong>{money(total)}</strong></div></div>
-          <div className="cart-actions"><button className="primary-button wide" type="button" disabled={!cart.length} onClick={() => setShowPayment(true)}>Pay {money(total)}</button><div className="grid-two"><button className="secondary-button" type="button" onClick={holdSale}>Hold sale {heldSales > 0 ? `(${heldSales})` : ''}</button><button className="secondary-button" type="button" onClick={() => setCart([])}>Clear</button></div></div>
-          {heldCarts.length > 0 && <div className="held-sale-list"><strong>Held sales</strong>{heldCarts.map((held) => <button type="button" key={held.id} onClick={() => restoreSale(held)}><span>{held.customer}</span><small>{held.cart.length} products</small></button>)}</div>}
-        </aside>
+        <div className="flex-1 overflow-y-auto p-4 scrollbar-thin">
+          {loadingProducts ? (
+            <div className="flex items-center justify-center py-24">
+              <Spinner size="lg" />
+            </div>
+          ) : products.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-24 text-center">
+              <PackageIcon size={40} className="text-muted opacity-40 mb-3" />
+              <p className="text-sm text-muted">No products found.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+              {products.map((p) => {
+                const out = p.stock <= 0;
+                const low = !out && p.stock <= p.lowStockThreshold;
+                return (
+                  <button
+                    key={p._id}
+                    type="button"
+                    disabled={out}
+                    onClick={() => addToCart(p)}
+                    className={classNames(
+                      'text-left rounded-lg border bg-surface p-3 transition',
+                      out
+                        ? 'border-border opacity-50 cursor-not-allowed'
+                        : 'border-border hover:border-brand-500 hover:bg-elevated'
+                    )}
+                  >
+                    <div className="aspect-square rounded-md bg-elevated mb-2 flex items-center justify-center overflow-hidden">
+                      {p.imageUrl ? (
+                        <img
+                          src={p.imageUrl}
+                          alt={p.name}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <PackageIcon size={28} className="text-muted opacity-40" />
+                      )}
+                    </div>
+                    <p className="text-sm font-medium text-fg line-clamp-2 leading-tight">
+                      {p.name}
+                    </p>
+                    <p className="text-[10px] text-muted mt-0.5 truncate">
+                      {p.sku || p.category || '—'}
+                    </p>
+                    <div className="flex items-center justify-between mt-1.5">
+                      <span className="text-sm font-semibold text-fg">
+                        {formatCurrency(p.price, currency)}
+                      </span>
+                      <span
+                        className={classNames(
+                          'text-[10px] font-medium',
+                          out
+                            ? 'text-red-600 dark:text-red-400'
+                            : low
+                            ? 'text-amber-600 dark:text-amber-400'
+                            : 'text-muted'
+                        )}
+                      >
+                        {out ? 'Out' : `${p.stock} left`}
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
 
-      {showPayment && <div className="modal-backdrop" role="presentation"><div className="payment-modal" role="dialog" aria-modal="true" aria-labelledby="payment-title"><div className="modal-header"><div><p className="eyebrow">Checkout</p><h3 id="payment-title">Collect payment</h3></div><button className="icon-button" type="button" onClick={() => setShowPayment(false)}>×</button></div><div className="payment-total">{money(total)}<small>{customer}</small></div><div className="payment-options"><button className={`method-chip ${!splitPayment ? 'active' : ''}`} type="button" onClick={() => setSplitPayment(false)}>Single payment</button><button className={`method-chip ${splitPayment ? 'active' : ''}`} type="button" onClick={() => setSplitPayment(true)}>Split payment</button></div>{splitPayment && <div className="split-payment-box"><select value={splitMethod} onChange={(event) => setSplitMethod(event.target.value as PaymentMethod)}><option>Cash</option><option>M-Pesa</option><option>Card</option></select><input type="number" min="1" value={splitAmount} onChange={(event) => setSplitAmount(event.target.value)} placeholder="First payment" /><span>Remaining: {money(Math.max(0, total - Number(splitAmount || 0)))}</span></div>}<div className="payment-methods">{(['M-Pesa', 'Cash', 'Card', 'Credit'] as PaymentMethod[]).map((method) => <button key={method} className={`method-chip ${paymentMethod === method ? 'active' : ''}`} type="button" onClick={() => setPaymentMethod(method)}>{method}</button>)}</div>{paymentMethod !== 'Credit' && <label className="field payment-field"><span>{splitPayment ? `Remaining payment (${paymentMethod})` : 'Amount received'}</span><input autoFocus type="number" value={amountReceived} onChange={(event) => setAmountReceived(event.target.value)} placeholder={money(splitPayment ? Math.max(0, total - Number(splitAmount || 0)) : total)} /></label>}{paymentMethod !== 'Credit' && Number(amountReceived) > 0 && !splitPayment && <div className="payment-change"><span>Change due</span><strong>{money(change)}</strong></div>}<label className="receipt-delivery"><span>Receipt delivery</span><select value={receiptDelivery} onChange={(event) => setReceiptDelivery(event.target.value as typeof receiptDelivery)}><option>Print</option><option>Email</option><option>SMS</option></select></label><div className="modal-actions"><button className="secondary-button" type="button" onClick={() => setShowPayment(false)}>Cancel</button><button className="primary-button" type="button" disabled={!paymentReady} onClick={finishSale}>Complete sale</button></div></div></div>}
-      {completedSale && <div className="modal-backdrop" role="presentation"><div className="success-modal" role="dialog" aria-modal="true"><div className="success-icon">✓</div><h3>Sale completed</h3><div className="success-amount">{money(total)}</div><p>Receipt INV-00483 · {customer}</p><div className="modal-actions"><button className="secondary-button" type="button" onClick={() => setCompletedSale(false)}>Close</button><button className="primary-button" type="button" onClick={() => { setCompletedSale(false); setCart([]); setCustomer(customers[0]); }}>New sale</button></div></div></div>}
+      <Cart
+        items={cart}
+        customer={customer}
+        currency={currency}
+        taxRate={taxRate}
+        taxInclusive={taxInclusive}
+        subtotal={subtotal}
+        discountValue={discountValue}
+        taxAmount={taxAmount}
+        total={total}
+        discount={discount}
+        heldCount={heldCount}
+        onDiscountChange={setDiscount}
+        onQtyChange={changeQty}
+        onRemove={removeItem}
+        onClear={clearCart}
+        onOpenCustomerPicker={() => setCustomerPickerOpen(true)}
+        onOpenHeldSales={() => setHeldDrawerOpen(true)}
+        onHoldSale={() => setHoldModalOpen(true)}
+        onCharge={() => setPaymentOpen(true)}
+      />
+
+      {customerPickerOpen && (
+        <CustomerPicker
+          customers={customers}
+          selected={customer}
+          onSelect={(c) => {
+            setCustomer(c);
+            setCustomerPickerOpen(false);
+          }}
+          onCreate={(c) => setCustomers((cur) => [c, ...cur])}
+          onClose={() => setCustomerPickerOpen(false)}
+        />
+      )}
+
+      {paymentOpen && (
+        <PaymentModal
+          cart={cart}
+          subtotal={subtotal}
+          discountValue={discountValue}
+          total={total}
+          currency={currency}
+          customer={customer}
+          enabledMethods={enabledPaymentMethods}
+          availableMethods={settings.paymentMethods as string[] | undefined}
+          onClose={() => setPaymentOpen(false)}
+          onSuccess={async (sale, change) => {
+            if (currentHeldId) {
+              try {
+                await heldSalesApi.remove(currentHeldId);
+              } catch {
+                /* silent */
+              }
+              setCurrentHeldId(null);
+              refreshHeldCount();
+            }
+            setPaymentOpen(false);
+            setCompletedSale(sale);
+            setLastChange(change);
+          }}
+        />
+      )}
+
+      {completedSale && (
+        <SuccessModal
+          sale={completedSale}
+          change={lastChange}
+          currency={currency}
+          onNewSale={resetSale}
+        />
+      )}
+
+      {holdModalOpen && (
+        <HoldSaleModal
+          defaultLabel={customer?.name || 'Walk-in'}
+          itemCount={cart.reduce((s, i) => s + i.qty, 0)}
+          total={formatCurrency(total, currency)}
+          saving={holding}
+          onConfirm={holdSale}
+          onClose={() => setHoldModalOpen(false)}
+        />
+      )}
+
+      {heldDrawerOpen && (
+        <HeldSalesDrawer
+          currency={currency}
+          onResume={resumeHeld}
+          onClose={() => setHeldDrawerOpen(false)}
+        />
+      )}
     </div>
   );
 }

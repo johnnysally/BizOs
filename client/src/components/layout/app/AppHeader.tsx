@@ -9,6 +9,20 @@ import {
   Sun,
   Moon,
   Bell,
+  LayoutDashboard,
+  ShoppingCart,
+  Receipt,
+  Package,
+  Boxes,
+  Users,
+  Truck,
+  ShoppingBag,
+  FileText,
+  BarChart3,
+  Sparkles,
+  MessageCircle,
+  UserCog,
+  Mail,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useClient } from '@/context/ClientContext';
@@ -19,20 +33,59 @@ import { initials } from '@/utils/format';
 import { ROUTES, ROLES } from '@/utils/constants';
 import { canManageSettings } from '@/utils/permissions';
 
-const MOBILE_NAV = [
-  { to: ROUTES.app, label: 'Dashboard', roles: [ROLES.OWNER, ROLES.MANAGER, ROLES.CASHIER] },
-  { to: ROUTES.pos, label: 'POS', roles: [ROLES.OWNER, ROLES.MANAGER, ROLES.CASHIER] },
-  { to: ROUTES.sales, label: 'Sales', roles: [ROLES.OWNER, ROLES.MANAGER, ROLES.CASHIER] },
-  { to: ROUTES.products, label: 'Products', roles: [ROLES.OWNER, ROLES.MANAGER] },
-  { to: ROUTES.inventory, label: 'Inventory', roles: [ROLES.OWNER, ROLES.MANAGER] },
-  { to: ROUTES.customers, label: 'Customers', roles: [ROLES.OWNER, ROLES.MANAGER] },
-  { to: ROUTES.suppliers, label: 'Suppliers', roles: [ROLES.OWNER, ROLES.MANAGER] },
-  { to: ROUTES.purchaseOrders, label: 'Purchase Orders', roles: [ROLES.OWNER, ROLES.MANAGER] },
-  { to: ROUTES.invoices, label: 'Invoices', roles: [ROLES.OWNER, ROLES.MANAGER] },
-  { to: ROUTES.reports, label: 'Reports', roles: [ROLES.OWNER, ROLES.MANAGER] },
-  { to: ROUTES.insights, label: 'Insights', roles: [ROLES.OWNER, ROLES.MANAGER] },
-  { to: ROUTES.chat, label: 'AI Assistant', roles: [ROLES.OWNER, ROLES.MANAGER] },
-  { to: ROUTES.settings, label: 'Settings', roles: [ROLES.OWNER] },
+const ALL = [ROLES.OWNER, ROLES.MANAGER, ROLES.CASHIER];
+const MGMT = [ROLES.OWNER, ROLES.MANAGER];
+const OWNER = [ROLES.OWNER];
+
+const MOBILE_SECTIONS: Array<{
+  label: string;
+  items: Array<{ to: string; label: string; roles: string[]; icon: typeof LayoutDashboard }>;
+}> = [
+  {
+    label: '',
+    items: [
+      { to: ROUTES.app, label: 'Dashboard', roles: ALL, icon: LayoutDashboard },
+      { to: ROUTES.pos, label: 'POS', roles: ALL, icon: ShoppingCart },
+      { to: ROUTES.sales, label: 'Sales', roles: ALL, icon: Receipt },
+    ],
+  },
+  {
+    label: 'Catalog',
+    items: [
+      { to: ROUTES.products, label: 'Products', roles: MGMT, icon: Package },
+      { to: ROUTES.inventory, label: 'Inventory', roles: MGMT, icon: Boxes },
+      { to: ROUTES.suppliers, label: 'Suppliers', roles: MGMT, icon: Truck },
+      { to: ROUTES.purchaseOrders, label: 'Purchase Orders', roles: MGMT, icon: ShoppingBag },
+    ],
+  },
+  {
+    label: 'Billing',
+    items: [
+      { to: ROUTES.customers, label: 'Customers', roles: MGMT, icon: Users },
+      { to: ROUTES.invoices, label: 'Invoices', roles: MGMT, icon: FileText },
+    ],
+  },
+  {
+    label: 'Insights',
+    items: [
+      { to: ROUTES.reports, label: 'Reports', roles: MGMT, icon: BarChart3 },
+      { to: ROUTES.insights, label: 'Insights', roles: MGMT, icon: Sparkles },
+      { to: ROUTES.chat, label: 'AI Assistant', roles: MGMT, icon: MessageCircle },
+    ],
+  },
+  {
+    label: 'Staff',
+    items: [
+      { to: ROUTES.users, label: 'Team', roles: OWNER, icon: UserCog },
+      { to: ROUTES.invitations, label: 'Invitations', roles: OWNER, icon: Mail },
+    ],
+  },
+  {
+    label: 'Admin',
+    items: [
+      { to: ROUTES.settings, label: 'Settings', roles: OWNER, icon: SettingsIcon },
+    ],
+  },
 ];
 
 export function AppHeader() {
@@ -43,14 +96,15 @@ export function AppHeader() {
   const [open, setOpen] = useState(false);
 
   const role = user?.role || ROLES.CASHIER;
-  const visibleMobileNav = MOBILE_NAV.filter((item) =>
-    item.roles.includes(role)
-  );
+
+  const visibleSections = MOBILE_SECTIONS.map((section) => ({
+    ...section,
+    items: section.items.filter((item) => item.roles.includes(role)),
+  })).filter((section) => section.items.length > 0);
 
   return (
     <header className="h-16 shrink-0 bg-surface border-b border-border relative">
       <div className="h-full px-4 sm:px-6 flex items-center justify-between gap-4">
-        {/* Left: mobile menu + client identity (mobile only) */}
         <div className="flex items-center gap-3 min-w-0">
           <button
             type="button"
@@ -63,11 +117,7 @@ export function AppHeader() {
 
           <div className="flex items-center gap-2 md:hidden min-w-0">
             {settings?.logoUrl ? (
-              <img
-                src={settings.logoUrl}
-                alt={tenant?.name}
-                className="h-8"
-              />
+              <img src={settings.logoUrl} alt={tenant?.name} className="h-8" />
             ) : (
               <div className="w-8 h-8 rounded-lg bg-brand-600 flex items-center justify-center text-white text-sm font-bold shrink-0">
                 B
@@ -84,7 +134,6 @@ export function AppHeader() {
           </div>
         </div>
 
-        {/* Right: actions */}
         <div className="flex items-center gap-1 shrink-0">
           <button
             type="button"
@@ -145,25 +194,39 @@ export function AppHeader() {
         </div>
       </div>
 
-      {/* Mobile navigation panel */}
       {open && (
         <div className="md:hidden absolute top-16 left-0 right-0 bg-surface border-b border-border shadow-lg max-h-[calc(100vh-4rem)] overflow-y-auto z-20">
-          <nav className="p-3 space-y-0.5">
-            {visibleMobileNav.map((item) => (
-              <button
-                key={item.to}
-                type="button"
-                onClick={() => {
-                  setOpen(false);
-                  navigate(item.to);
-                }}
-                className={classNames(
-                  'block w-full text-left px-3 py-2 rounded-md text-sm font-medium',
-                  'text-muted hover:bg-elevated hover:text-fg'
+          <nav className="p-3 space-y-4">
+            {visibleSections.map((section, si) => (
+              <div key={section.label || `sec-${si}`}>
+                {section.label && (
+                  <p className="px-3 mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted">
+                    {section.label}
+                  </p>
                 )}
-              >
-                {item.label}
-              </button>
+                <div className="space-y-0.5">
+                  {section.items.map((item) => {
+                    const Icon = item.icon;
+                    return (
+                      <button
+                        key={item.to}
+                        type="button"
+                        onClick={() => {
+                          setOpen(false);
+                          navigate(item.to);
+                        }}
+                        className={classNames(
+                          'w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium text-left',
+                          'text-muted hover:bg-elevated hover:text-fg'
+                        )}
+                      >
+                        <Icon size={16} />
+                        <span>{item.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             ))}
           </nav>
         </div>

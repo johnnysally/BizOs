@@ -46,6 +46,8 @@ export const ROLES = {
   CASHIER: 'cashier',
 } as const;
 
+export const ROLES_LIST = ['owner', 'manager', 'cashier'] as const;
+
 export const USER_STATUS = {
   PENDING: 'pending_user',
   ACTIVE: 'active',
