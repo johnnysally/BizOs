@@ -1,6 +1,7 @@
 const { asyncHandler } = require('../../utils/asyncHandler');
 const { ok } = require('../../utils/apiResponse');
 const siteService = require('../../services/siteService');
+const PlatformSetting = require('../../models/admin/PlatformSetting');
 const Plan = require('../../models/admin/Plan');
 
 const getPublicSettings = asyncHandler(async (_req, res) => {
@@ -47,6 +48,24 @@ const getPlans = asyncHandler(async (_req, res) => {
   return ok(res, plans);
 });
 
+const getDownloads = asyncHandler(async (_req, res) => {
+  const list = (await PlatformSetting.getValue('downloads', [])) || [];
+
+  const active = list
+    .filter((d) => d.isActive)
+    .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
+    .map((d) => ({
+      id: d.id,
+      name: d.name,
+      version: d.version || null,
+      link: d.link,
+      platform: d.platform,
+      description: d.description || null,
+    }));
+
+  return ok(res, active);
+});
+
 module.exports = {
   getPublicSettings,
   getBusinessTypes,
@@ -56,4 +75,5 @@ module.exports = {
   getFeatureFlags,
   getFeatureMap,
   getPlans,
+  getDownloads,
 };

@@ -1,79 +1,225 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
-import { authApi } from '../api/auth';
-import { setOnTokenRefreshed, setOnUnauthorized, setTokenGetter } from '../api/axios';
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  ReactNode,
+} from 'react';
+import { authApi } from '@/api/auth';
+import {
+  setTokenGetter,
+  setOnTokenRefreshed,
+  setOnUnauthorized,
+} from '@/api/axios';
+import type {
+  User,
+  Tenant,
+  Plan,
+  LatestInvoice,
+  RegisterInput,
+  AuthScope,
+} from '@/types/auth';
 
-const ACCESS_TOKEN_KEY = 'bizos_client_access';
-const REFRESH_TOKEN_KEY = 'bizos_client_refresh';
+type Status = 'idle' | 'loading' | 'authenticated' | 'unauthenticated';
 
-export type AuthUser = { id?: string; _id?: string; email: string; fullName?: string; name?: string; role?: string; [key: string]: unknown };
-export type AuthSession = { user: AuthUser; tenant?: Record<string, unknown> | null; plan?: Record<string, unknown> | null; scope?: string };
-
-type AuthContextValue = {
-	session: AuthSession | null;
-	loading: boolean;
-	error: string;
-	login: (email: string, password: string) => Promise<void>;
-	logout: () => Promise<void>;
-	clearError: () => void;
-};
-
-const AuthContext = createContext<AuthContextValue | undefined>(undefined);
-
-function saveTokens(accessToken?: string, refreshToken?: string) {
-	if (accessToken) localStorage.setItem(ACCESS_TOKEN_KEY, accessToken);
-	if (refreshToken) localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
+interface AuthValue {
+  user: User | null;
+  tenant: Tenant | null;
+  plan: Plan | null;
+  invoice: LatestInvoice | null;
+  accessToken: string | null;
+  scope: AuthScope | null;
+  status: Status;
+  error: string | null;
+  register: (input: RegisterInput) => Promise<void>;
+  login: (email: string, password: string) => Promise<void>;
+  logout: () => Promise<void>;
+  hydrate: () => Promise<void>;
+  refresh: () => Promise<void>;
 }
 
-function clearTokens() {
-	localStorage.removeItem(ACCESS_TOKEN_KEY);
-	localStorage.removeItem(REFRESH_TOKEN_KEY);
-}
+const AuthContext = createContext<AuthValue | null>(null);
+
+const USER_KEY = 'bizos_client_user';
+const REFRESH_KEY = 'bizos_client_refresh';
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-	const [session, setSession] = useState<AuthSession | null>(null);
-	const [loading, setLoading] = useState(true);
-	const [error, setError] = useState('');
+  const [user, setUser] = useState<User | null>(null);
+  const [tenant, setTenant] = useState<Tenant | null>(null);
+  const [plan, setPlan] = useState<Plan | null>(null);
+  const [invoice, setInvoice] = useState<LatestInvoice | null>(null);
+  const [accessToken, setAccessToken] = useState<string | null>(null);
+  const [scope, setScope] = useState<AuthScope | null>(null);
+  const [status, setStatus] = useState<Status>('idle');
+  const [error, setError] = useState<string | null>(null);
 
-	useEffect(() => {
-		setTokenGetter(() => localStorage.getItem(ACCESS_TOKEN_KEY));
-		setOnTokenRefreshed((token) => localStorage.setItem(ACCESS_TOKEN_KEY, token));
-		setOnUnauthorized(() => { clearTokens(); setSession(null); });
+  useEffect(() => {
+    setTokenGetter(() => accessToken);
+  }, [accessToken]);
 
-		if (!localStorage.getItem(ACCESS_TOKEN_KEY)) {
-			setLoading(false);
-			return undefined;
-		}
+  useEffect(() => {
+    setOnTokenRefreshed((token) => setAccessToken(token));
+  }, []);
 
-		void authApi.me()
-			.then((data) => setSession(data))
-			.catch(() => clearTokens())
-			.finally(() => setLoading(false));
+  useEffect(() => {
+    setOnUnauthorized(() => {
+      setUser(null);
+      setTenant(null);
+      setPlan(null);
+      setInvoice(null);
+      setAccessToken(null);
+      setScope(null);
+      setStatus('unauthenticated');
+      localStorage.removeItem(USER_KEY);
+      localStorage.removeItem(REFRESH_KEY);
+    });
+  }, []);
 
-		return undefined;
-	}, []);
+  const register = async (input: RegisterInput) => {
+    setStatus('loading');
+    setError(null);
+    try {
+      const data = await authApi.register(input);
+      setUser(data.user);
+      setTenant(data.tenant);
+      setPlan(data.plan);
+      setInvoice(null);
+      setAccessToken(data.accessToken);
+      setScope('pending');
+      localStorage.setItem(USER_KEY, JSON.stringify(data.user));
+      localStorage.setItem(REFRESH_KEY, data.refreshToken);
+      setStatus('authenticated');
+    } catch (e) {
+      const msg = (e as { message?: string }).message || 'Registration failed';
+      setError(msg);
+      setStatus('unauthenticated');
+      throw e;
+    }
+  };
 
-	const login = async (email: string, password: string) => {
-		setError('');
-		try {
-			const data = await authApi.login(email, password);
-			saveTokens(data.accessToken, data.refreshToken);
-			const current = await authApi.me();
-			setSession(current);
-		} catch (reason) {
-			setError(reason instanceof Error ? reason.message : 'Unable to sign in. Check your details and try again.');
-			throw reason;
-		}
-	};
+  const login = async (email: string, password: string) => {
+    setStatus('loading');
+    setError(null);
+    try {
+      const data = await authApi.login(email, password);
+      setUser(data.user);
+      setTenant(data.tenant);
+      setPlan(data.plan);
+      setInvoice(data.invoice || null);
+      setAccessToken(data.accessToken);
+      setScope(data.scope);
+      localStorage.setItem(USER_KEY, JSON.stringify(data.user));
+      localStorage.setItem(REFRESH_KEY, data.refreshToken);
+      setStatus('authenticated');
+    } catch (e) {
+      const msg = (e as { message?: string }).message || 'Login failed';
+      setError(msg);
+      setStatus('unauthenticated');
+      throw e;
+    }
+  };
 
-	const logout = async () => {
-		try { await authApi.logout(); } finally { clearTokens(); setSession(null); }
-	};
+  const logout = async () => {
+    try {
+      await authApi.logout();
+    } catch {
+      /* ignore */
+    } finally {
+      setUser(null);
+      setTenant(null);
+      setPlan(null);
+      setInvoice(null);
+      setAccessToken(null);
+      setScope(null);
+      setStatus('unauthenticated');
+      localStorage.removeItem(USER_KEY);
+      localStorage.removeItem(REFRESH_KEY);
+    }
+  };
 
-	return <AuthContext.Provider value={{ session, loading, error, login, logout, clearError: () => setError('') }}>{children}</AuthContext.Provider>;
+  const refresh = async () => {
+    const rt = localStorage.getItem(REFRESH_KEY);
+    if (!rt) throw new Error('No refresh token');
+    const data = await authApi.refresh(rt);
+    setAccessToken(data.accessToken);
+    localStorage.setItem(REFRESH_KEY, data.refreshToken);
+  };
+
+  const hydrate = async () => {
+    const cached = localStorage.getItem(USER_KEY);
+    const rt = localStorage.getItem(REFRESH_KEY);
+
+    if (!rt) {
+      setStatus('unauthenticated');
+      return;
+    }
+
+    setStatus('loading');
+
+    try {
+      if (cached) {
+        try {
+          const parsed = JSON.parse(cached);
+          setUser(parsed);
+        } catch {
+          /* ignore malformed cache */
+        }
+      }
+
+      const refreshed = await authApi.refresh(rt);
+      setAccessToken(refreshed.accessToken);
+      localStorage.setItem(REFRESH_KEY, refreshed.refreshToken);
+
+      const me = await authApi.me();
+      setUser(me.user);
+      setTenant(me.tenant);
+      setPlan(me.plan);
+      setInvoice(me.invoice || null);
+      setScope(me.scope);
+      localStorage.setItem(USER_KEY, JSON.stringify(me.user));
+      setStatus('authenticated');
+    } catch {
+      setUser(null);
+      setTenant(null);
+      setPlan(null);
+      setInvoice(null);
+      setAccessToken(null);
+      setScope(null);
+      setStatus('unauthenticated');
+      localStorage.removeItem(USER_KEY);
+      localStorage.removeItem(REFRESH_KEY);
+    }
+  };
+
+  useEffect(() => {
+    hydrate();
+  }, []);
+
+  return (
+    <AuthContext.Provider
+      value={{
+        user,
+        tenant,
+        plan,
+        invoice,
+        accessToken,
+        scope,
+        status,
+        error,
+        register,
+        login,
+        logout,
+        hydrate,
+        refresh,
+      }}
+    >
+      {children}
+    </AuthContext.Provider>
+  );
 }
 
-export function useAuth() {
-	const context = useContext(AuthContext);
-	if (!context) throw new Error('useAuth must be used inside AuthProvider');
-	return context;
-}
+export const useAuth = () => {
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error('useAuth must be used within AuthProvider');
+  return ctx;
+};

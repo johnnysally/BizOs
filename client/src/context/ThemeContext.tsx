@@ -1,48 +1,50 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { storage } from '@/utils/storage';
 
-type Theme = 'light' | 'dark' | 'system';
+type Theme = 'light' | 'dark';
 
-type ThemeContextValue = {
+interface ThemeValue {
   theme: Theme;
-  resolvedTheme: 'light' | 'dark';
   setTheme: (theme: Theme) => void;
-};
+  toggle: () => void;
+}
 
-const ThemeContext = createContext<ThemeContextValue | undefined>(undefined);
+const STORAGE_KEY = 'bizos_theme';
 
-function getSystemTheme(): 'light' | 'dark' {
-  return typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+const ThemeContext = createContext<ThemeValue | null>(null);
+
+function getInitialTheme(): Theme {
+  const stored = storage.get(STORAGE_KEY);
+  if (stored === 'light' || stored === 'dark') return stored;
+
+  if (typeof window !== 'undefined' && window.matchMedia) {
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  }
+
+  return 'light';
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setThemeState] = useState<Theme>(() => {
-    if (typeof window === 'undefined') return 'light';
-    const stored = window.localStorage.getItem('bizos-theme');
-    return stored === 'dark' || stored === 'system' ? stored : 'light';
-  });
-  const [systemTheme, setSystemTheme] = useState<'light' | 'dark'>(getSystemTheme);
-  const resolvedTheme = theme === 'system' ? systemTheme : theme;
+  const [theme, setTheme] = useState<Theme>(getInitialTheme);
 
   useEffect(() => {
-    document.documentElement.dataset.theme = resolvedTheme;
-    document.body.classList.toggle('theme-dark', resolvedTheme === 'dark');
-    document.body.classList.toggle('theme-light', resolvedTheme === 'light');
-    window.localStorage.setItem('bizos-theme', theme);
-  }, [resolvedTheme, theme]);
-
-  useEffect(() => {
-    if (theme !== 'system') return undefined;
-    const media = window.matchMedia('(prefers-color-scheme: dark)');
-    const update = (event: MediaQueryListEvent) => setSystemTheme(event.matches ? 'dark' : 'light');
-    media.addEventListener('change', update);
-    return () => media.removeEventListener('change', update);
+    const root = document.documentElement;
+    if (theme === 'dark') root.classList.add('dark');
+    else root.classList.remove('dark');
+    storage.set(STORAGE_KEY, theme);
   }, [theme]);
 
-  return <ThemeContext.Provider value={{ theme, resolvedTheme, setTheme: setThemeState }}>{children}</ThemeContext.Provider>;
+  const toggle = () => setTheme((t) => (t === 'dark' ? 'light' : 'dark'));
+
+  return (
+    <ThemeContext.Provider value={{ theme, setTheme, toggle }}>
+      {children}
+    </ThemeContext.Provider>
+  );
 }
 
-export function useTheme() {
-  const context = useContext(ThemeContext);
-  if (!context) throw new Error('useTheme must be used inside ThemeProvider');
-  return context;
-}
+export const useTheme = () => {
+  const ctx = useContext(ThemeContext);
+  if (!ctx) throw new Error('useTheme must be used within ThemeProvider');
+  return ctx;
+};

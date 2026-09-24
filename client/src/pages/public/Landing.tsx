@@ -1,80 +1,23 @@
-﻿import { ArrowRight, BarChart3, Bot, Check, ChevronRight, CircleDollarSign, Menu, MessageCircle, PackageCheck, Send, ShoppingCart, Sparkles, Store, X } from 'lucide-react';
-import { useState } from 'react';
-import type { AppPage } from '../../routes/AppRoutes';
-import { PublicFooter } from '../../components/layout/public/PublicFooter';
-import { publicChatApi } from '../../api/chat';
+import { Hero } from '@/components/public/Hero';
+import { FeatureStrip } from '@/components/public/FeatureStrip';
+import { FeatureGrid } from '@/components/public/FeatureGrid';
+import { HowItWorks } from '@/components/public/HowItWorks';
+import { PricingPreview } from '@/components/public/PricingPreview';
+import { FAQ } from '@/components/public/FAQ';
+import { CTASection } from '@/components/public/CTASection';
+import { PublicChatWidget } from '@/components/public/PublicChatWidget';
 
-const featureRows = [
-  { icon: ShoppingCart, title: 'Sell at the speed of service', text: 'A focused checkout that keeps scanning, payments, and receipts in one clean rhythm.' },
-  { icon: PackageCheck, title: 'Know what is moving', text: 'Stock levels, reorder signals, and purchasing decisions stay connected to every sale.' },
-  { icon: BarChart3, title: 'See the whole business', text: 'Live reporting for revenue, margins, branches, and the people making it happen.' },
-];
-
-type ChatMessage = { role: 'assistant' | 'user'; content: string };
-
-const starterMessage: ChatMessage = {
-  role: 'assistant',
-  content: 'Hi, I’m the BizOs guide. Ask me anything about running sales, stock, or branches.',
-};
-
-export function Landing({ onNavigate }: { onNavigate: (page: AppPage) => void }) {
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [contactSent, setContactSent] = useState(false);
-  const [chatOpen, setChatOpen] = useState(true);
-  const [chatInput, setChatInput] = useState('');
-  const [chatLoading, setChatLoading] = useState(false);
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([starterMessage]);
-
-  const sendChatMessage = async (preset?: string) => {
-    const text = (preset ?? chatInput).trim();
-    if (!text || chatLoading) return;
-
-    setChatInput('');
-    setChatMessages((current) => [...current, { role: 'user', content: text }]);
-    setChatLoading(true);
-
-    try {
-      const response = await publicChatApi.message(text);
-      setChatMessages((current) => [...current, { role: 'assistant', content: response.reply }]);
-    } catch {
-      setChatMessages((current) => [...current, { role: 'assistant', content: 'I’m having trouble connecting right now. You can reach our team at hello@bizos.co.ke.' }]);
-    } finally {
-      setChatLoading(false);
-    }
-  };
-
+export default function Landing() {
   return (
-    <main className="landing-page">
-      <nav className="landing-nav"><div className="landing-nav-inner"><button className="landing-brand" type="button" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}><span className="landing-brand-mark">B</span><span><strong>BizOs</strong><small>Business OS</small></span></button><div className={`landing-nav-links ${mobileMenuOpen ? 'open' : ''}`}><a href="#home" onClick={() => setMobileMenuOpen(false)}>Home</a><a href="#about" onClick={() => setMobileMenuOpen(false)}>About us</a><a href="#contact" onClick={() => setMobileMenuOpen(false)}>Contact</a><a href="#plans" onClick={() => setMobileMenuOpen(false)}>Plans</a></div><div className="landing-nav-actions"><span className="landing-nav-status"><i /> All systems live</span><button className="landing-login" type="button" onClick={() => onNavigate('login')}>Sign in</button><button className="primary-button small" type="button" onClick={() => onNavigate('register')}>Start free <ArrowRight size={15} /></button><button className="landing-menu-button" type="button" onClick={() => setMobileMenuOpen((current) => !current)} aria-label={mobileMenuOpen ? 'Close menu' : 'Open menu'}>{mobileMenuOpen ? <X size={20} /> : <Menu size={20} />}</button></div></div></nav>
-
-      <section className="landing-hero" id="product"><div className="landing-hero-copy"><div className="landing-kicker"><span className="landing-kicker-dot" />Built for the business in motion</div><h1>Every sale is a signal.<br /><em>Make it count.</em></h1><p>BizOs brings your counter, stockroom, branches, and business decisions into one calm operating system for modern commerce.</p><div className="landing-hero-actions"><button className="primary-button large" type="button" onClick={() => onNavigate('register')}>Open your workspace <ArrowRight size={17} /></button><button className="landing-text-button" type="button" onClick={() => document.getElementById('workflow')?.scrollIntoView({ behavior: 'smooth' })}>See how it works <ChevronRight size={17} /></button></div><div className="landing-proof"><div className="landing-avatar-stack"><span>JM</span><span>AW</span><span>PK</span></div><span>Trusted by teams keeping<br /><strong>their businesses moving</strong></span></div></div><div className="landing-hero-visual"><div className="landing-orbit orbit-one" /><div className="landing-orbit orbit-two" /><div className="pos-window"><div className="pos-window-top"><div className="pos-window-brand"><span className="mini-brand-mark">B</span><strong>BizOs <small>POS</small></strong></div><span className="pos-live"><i />Live register</span><span className="pos-window-menu">•••</span></div><div className="pos-window-body"><div className="pos-catalog"><div className="pos-catalog-head"><div><small>Tuesday, 22 September</small><strong>New sale</strong></div><span className="pos-register-pill">Main Branch · R1</span></div><div className="pos-search-line"><span>⌕</span> Search products or scan barcode</div><div className="pos-category-row"><span className="active">All items</span><span>Cables</span><span>Lighting</span></div><div className="pos-product-grid"><div><span className="product-swatch swatch-blue" /><strong>Twin Cable 2.5mm</strong><small>SKU 2048 · 42 in stock</small><b>KES 8,500</b></div><div><span className="product-swatch swatch-yellow" /><strong>LED Bulb 12W</strong><small>SKU 1182 · 186 in stock</small><b>KES 320</b></div><div><span className="product-swatch swatch-red" /><strong>Switch 1 Gang</strong><small>SKU 3321 · 78 in stock</small><b>KES 480</b></div><div><span className="product-swatch swatch-green" /><strong>PVC Trunking</strong><small>SKU 5020 · 24 in stock</small><b>KES 1,240</b></div></div></div><div className="pos-cart"><div className="pos-cart-title"><strong>Current sale</strong><span>3 items</span></div><div className="pos-cart-item"><span className="cart-item-number">01</span><div><strong>Twin Cable 2.5mm</strong><small>1 × KES 8,500</small></div><b>KES 8,500</b></div><div className="pos-cart-item"><span className="cart-item-number">02</span><div><strong>LED Bulb 12W</strong><small>2 × KES 320</small></div><b>KES 640</b></div><div className="pos-cart-summary"><span>Subtotal <b>KES 9,140</b></span><span>VAT 16% <b>KES 1,462</b></span><strong>Total <b>KES 10,602</b></strong></div><button className="pos-pay-button" type="button" onClick={() => onNavigate('register')}>Charge KES 10,602 <ArrowRight size={14} /></button></div></div></div><div className="landing-floating-card floating-sales"><span className="floating-icon green"><CircleDollarSign size={16} /></span><div><small>Today&apos;s sales</small><strong>KES 184,250 <b>+12.4%</b></strong></div></div><div className="landing-floating-card floating-stock"><span className="floating-icon amber"><PackageCheck size={16} /></span><div><small>Stock health</small><strong>94.8% <b>Healthy</b></strong></div></div></div></section>
-
-      <section className="landing-metric-strip"><div><strong>1,284</strong><span>customer relationships</span></div><div><strong>87</strong><span>orders processed today</span></div><div><strong>3.84M</strong><span>inventory under control</span></div><div><strong>99.9%</strong><span>uptime for your operation</span></div></section>
-
-      <section className="landing-story" id="why-bizos"><div className="landing-section-label"><span>01</span><span>One clear view</span></div><div className="landing-story-grid"><div><h2>The counter is where the story starts.</h2><p>When a customer pays, your business learns something. BizOs turns that moment into better stock decisions, smarter follow-up, and a clearer next move.</p><button className="landing-text-button" type="button" onClick={() => onNavigate('register')}>Build your workspace <ArrowRight size={17} /></button></div><div className="landing-story-note"><Sparkles size={19} /><p>“The best tools disappear into the rhythm of the work.”</p><span>Designed for busy counters, stockrooms, and branch managers.</span></div></div></section>
-
-      <section className="landing-features" id="workflow"><div className="landing-section-label"><span>02</span><span>Made for the full day</span></div><div className="landing-feature-list">{featureRows.map(({ icon: Icon, title, text }, index) => <article key={title} className="landing-feature-row"><span className="feature-index">0{index + 1}</span><span className="feature-icon"><Icon size={21} /></span><div><h3>{title}</h3><p>{text}</p></div><ArrowRight className="feature-arrow" size={20} /></article>)}</div></section>
-
-      <section className="landing-day-flow"><div className="landing-section-label"><span>03</span><span>From open to close</span></div><div className="landing-day-flow-heading"><h2>A better day has<br /><em>a visible rhythm.</em></h2><p>BizOs keeps the important handoffs connected, so your team always knows what happened and what deserves attention next.</p></div><div className="landing-day-flow-grid"><article><span>08:00</span><strong>Open the register</strong><p>Set the float, check stock signals, and start the day with confidence.</p></article><article><span>12:30</span><strong>Keep selling</strong><p>Move through checkout while every transaction updates the business.</p></article><article><span>18:00</span><strong>Close with clarity</strong><p>Review the day, follow up on what matters, and plan tomorrow.</p></article></div></section>
-
-      <section className="landing-contact" id="contact"><div className="landing-contact-copy"><div className="landing-section-label"><span>03</span><span>Let&apos;s talk</span></div><h2>Questions are<br /><em>good business.</em></h2><p>Tell us what you are building, fixing, or trying to make simpler. Our team will get back to you within one business day.</p><div className="landing-contact-details"><div><strong>hello@bizos.co.ke</strong><span>General enquiries</span></div><div><strong>+254 712 000 111</strong><span>Mon - Fri, 8am - 5pm EAT</span></div></div></div><form className="landing-contact-form" onSubmit={(event) => { event.preventDefault(); setContactSent(true); }}><div className="landing-form-row"><label className="field"><span>Your name</span><input required placeholder="Jane Mwangi" /></label><label className="field"><span>Work email</span><input required type="email" placeholder="jane@business.co.ke" /></label></div><label className="field"><span>How can we help?</span><select defaultValue=""><option value="" disabled>Select a topic</option><option>Product walkthrough</option><option>Moving from another POS</option><option>Branches and inventory</option><option>Something else</option></select></label><label className="field"><span>Message</span><textarea required rows={4} placeholder="Tell us a little about your operation..." /></label><button className="primary-button" type="submit">{contactSent ? 'Message sent' : 'Send message'} <ArrowRight size={16} /></button>{contactSent && <span className="landing-form-success"><Check size={15} /> Thanks, we&apos;ll be in touch shortly.</span>}</form></section>
-
-      <section className="landing-cta"><div className="landing-cta-mark"><Store size={25} /></div><div><span className="landing-kicker">Your next shift starts here</span><h2>Run the business.<br /><em>Not the busywork.</em></h2></div><button className="primary-button large" type="button" onClick={() => onNavigate('register')}>Get started free <ArrowRight size={17} /></button></section>
-
-      <aside className={`landing-chat ${chatOpen ? 'is-open' : ''}`} aria-label="BizOs assistant">
-        {chatOpen && <div className="landing-chat-panel">
-          <div className="landing-chat-header"><div className="landing-chat-title"><span><Bot size={17} /></span><div><strong>BizOs guide</strong><small><i /> Usually replies instantly</small></div></div><button type="button" onClick={() => setChatOpen(false)} aria-label="Close chat"><X size={17} /></button></div>
-          <div className="landing-chat-messages">
-            {chatMessages.map((message, index) => <div className={`landing-chat-message ${message.role}`} key={`${message.role}-${index}`}><span>{message.role === 'assistant' ? <Bot size={14} /> : 'You'}</span><p>{message.content}</p></div>)}
-            {chatLoading && <div className="landing-chat-message assistant"><span><Bot size={14} /></span><p className="landing-chat-typing"><i /><i /><i /></p></div>}
-          </div>
-          <div className="landing-chat-prompts"><button type="button" onClick={() => sendChatMessage('What can BizOs help my business with?')}>What can BizOs do?</button><button type="button" onClick={() => sendChatMessage('How does inventory management work?')}>Inventory help</button></div>
-          <form className="landing-chat-form" onSubmit={(event) => { event.preventDefault(); void sendChatMessage(); }}><input value={chatInput} onChange={(event) => setChatInput(event.target.value)} placeholder="Ask the BizOs guide..." aria-label="Message the BizOs guide" /><button type="submit" aria-label="Send message" disabled={chatLoading || !chatInput.trim()}><Send size={16} /></button></form>
-        </div>}
-        <button className="landing-chat-launcher" type="button" onClick={() => setChatOpen((current) => !current)} aria-label={chatOpen ? 'Minimize BizOs guide' : 'Open BizOs guide'}>{chatOpen ? <X size={20} /> : <MessageCircle size={21} />}<span>Ask BizOs</span></button>
-      </aside>
-
-      <PublicFooter onNavigate={onNavigate} />
-    </main>
+    <>
+      <Hero />
+      <FeatureStrip />
+      <FeatureGrid />
+      <HowItWorks />
+      <PricingPreview />
+      <FAQ />
+      <CTASection />
+      <PublicChatWidget />
+    </>
   );
 }

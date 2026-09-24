@@ -9,4 +9,9 @@ router.get('/public', c.getPublic);
 router.get('/features', c.features);
 router.patch('/features', c.updateFeatures);
 
+router.get('/downloads', c.getDownloads);
+router.post('/downloads', c.createDownload);
+router.patch('/downloads/:downloadId', c.updateDownload);
+router.delete('/downloads/:downloadId', c.deleteDownload);
+
 module.exports = router;

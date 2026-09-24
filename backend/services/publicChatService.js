@@ -1,6 +1,5 @@
 const { chat } = require('./aiService');
-const { PlatformSetting } = require('../models/admin/PlatformSetting');
-const { Plan } = require('../models/admin/Plan');
+const PlatformSetting = require('../models/admin/PlatformSetting');
 const cacheService = require('./cacheService');
 const { getRedis } = require('../config/redis');
 const { logger } = require('../utils/logger');
@@ -21,54 +20,31 @@ async function buildSystemPrompt() {
     PlatformSetting.getValue('platform_website', null),
   ]);
 
-  const features = await PlatformSetting.find({ key: /^feature_/ }).lean();
-  const on = features.filter((f) => f.value === true).map((f) => f.key.replace('feature_', ''));
-  const off = features.filter((f) => f.value !== true).map((f) => f.key.replace('feature_', ''));
-
-  const plans = await Plan.find({ isActive: true }).sort({ sortOrder: 1 }).lean();
-
   const lines = [];
-  lines.push(`You are the AI assistant on ${platformName}'s landing page. ${platformName} is a point-of-sale platform for small businesses.`);
+  lines.push(
+    `You are the AI assistant on ${platformName}'s landing page. ${platformName} is a point-of-sale platform for small businesses.`
+  );
   lines.push('');
-  lines.push('Available features:');
-  for (const f of on) lines.push(`- ${label(f)}`);
+  lines.push('Core features:');
+  lines.push('- Point of sale (cash, card, M-Pesa)');
+  lines.push('- Inventory and stock management');
+  lines.push('- Staff roles (owner, manager, cashier)');
+  lines.push('- Suppliers and purchase orders');
+  lines.push('- Invoices to customers');
+  lines.push('- AI business insights');
+  lines.push('- Multi-location support');
   lines.push('');
-  if (off.length) {
-    lines.push('Not yet available (do not promise these):');
-    for (const f of off) lines.push(`- ${label(f)}`);
-    lines.push('');
-  }
-
-  if (plans.length) {
-    lines.push('Pricing:');
-    for (const p of plans) {
-      const price = p.price?.amount
-        ? `${p.price.amount} ${p.price.currency}/${p.price.interval}`
-        : 'Free';
-      lines.push(`- ${p.name} — ${price}${p.description ? ` (${p.description})` : ''}`);
-    }
-    lines.push('');
-  }
-
-  lines.push('Staff roles: owner, manager, cashier.');
+  lines.push('You only answer questions about the platform itself.');
+  lines.push('Do not invent features that are not listed.');
+  lines.push('If asked about something you do not know, suggest contacting support.');
   lines.push('');
   if (supportEmail) lines.push(`Support email: ${supportEmail}`);
   if (supportPhone) lines.push(`Support phone: ${supportPhone}`);
   if (website) lines.push(`Website: ${website}`);
-  lines.push('');
-  lines.push('Rules:');
-  lines.push('- Only describe features listed as available. Do not invent features.');
-  lines.push('- If asked about something not listed, say you do not have that information and suggest contacting support.');
-  lines.push('- Keep replies concise (2–4 short paragraphs max).');
-  lines.push(`- Reply in the user's language.`);
 
   const prompt = lines.join('\n');
   await cacheService.set(PROMPT_CACHE_KEY, prompt, PROMPT_TTL);
   return prompt;
-}
-
-function label(key) {
-  return key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 async function invalidatePromptCache() {
@@ -85,14 +61,20 @@ async function checkRateLimit(ip) {
 }
 
 async function reply({ text, ip }) {
-  if (!text || !text.trim()) return { reply: 'Please type a question.' };
+  if (!text || !text.trim()) {
+    return { reply: 'Please type a question.' };
+  }
 
   const allowed = await checkRateLimit(ip);
-  if (!allowed) return { reply: 'Too many messages. Please try again later.' };
+  if (!allowed) {
+    return { reply: 'Too many messages. Please try again later.' };
+  }
 
   try {
     const systemPrompt = await buildSystemPrompt();
-    const { reply: answer, tokensUsed } = await chat(text, systemPrompt, { type: 'public_chat' });
+    const { reply: answer, tokensUsed } = await chat(text, systemPrompt, {
+      type: 'public_chat',
+    });
     return { reply: answer, tokensUsed };
   } catch (err) {
     logger.error({ err: err.message, ip }, 'publicChat failed');

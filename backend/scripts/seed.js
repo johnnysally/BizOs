@@ -58,7 +58,7 @@ async function seedPlans() {
       code: 'standard',
       name: 'Standard',
       description: 'One-time payment. Full access. No expiry.',
-      price: { amount: 1500, currency: 'KES', interval: 'once' },
+      price: { amount: 6000, currency: 'KES', interval: 'once' },
       limits: {
         maxOwners: 10,
         maxManagers: 50,
@@ -100,7 +100,7 @@ async function seedPlans() {
         customDomain: false,
       },
       isPublic: true,
-      isActive: true,
+      isActive: false,
       sortOrder: 1,
       trialDays: 14,
     },
@@ -125,7 +125,7 @@ async function seedPlans() {
         customDomain: false,
       },
       isPublic: true,
-      isActive: true,
+      isActive: false,
       sortOrder: 2,
       trialDays: 14,
     },
@@ -137,14 +137,6 @@ async function seedPlans() {
     upserted++;
   }
   ok(`Plans: ${upserted} upserted`);
-
-  const existing = await Plan.find({ code: { $nin: plans.map((p) => p.code) } })
-    .select('code')
-    .lean();
-  if (existing.length) {
-    warn(`Other plans found: ${existing.map((p) => p.code).join(', ')}`);
-    warn('Run with --reset-plans flag to remove them (not implemented — do it manually)');
-  }
 }
 
 /* ─────────────────────── PAYMENT METHODS ─────────────────────── */
@@ -254,7 +246,7 @@ async function seedSettings() {
     ['feature_api', false],
     ['feature_purchase_orders', true],
     ['feature_invoices', true],
-    ['business_types', ['retail', 'restaurant', 'salon', 'pharmacy', 'other']],
+    ['business_types', ['retail', 'restaurant', 'salon', 'pharmacy', 'cosmetics', 'other']],
     ['countries', [
       { code: 'KE', name: 'Kenya', currency: 'KES', dialCode: '+254' },
       { code: 'UG', name: 'Uganda', currency: 'UGX', dialCode: '+256' },
@@ -266,6 +258,48 @@ async function seedSettings() {
     ['currencies', ['KES', 'UGX', 'TZS', 'NGN', 'GHS', 'ZAR', 'USD']],
     ['chat_greeting', 'Hi! Ask me anything about BizOS.'],
     ['chat_disclaimer', 'I only know what BizOS can do. For anything else, email support@bizos.co.ke.'],
+    ['downloads', [
+      {
+        id: 'seed-product-import',
+        name: 'Product Import Template',
+        version: '1.0',
+        link: '/downloads/product-import-template.csv',
+        platform: 'template',
+        description: 'CSV template for bulk importing products.',
+        isActive: true,
+        sortOrder: 1,
+      },
+      {
+        id: 'seed-customer-import',
+        name: 'Customer Import Template',
+        version: '1.0',
+        link: '/downloads/customer-import-template.csv',
+        platform: 'template',
+        description: 'CSV template for bulk importing customers.',
+        isActive: true,
+        sortOrder: 2,
+      },
+      {
+        id: 'seed-invoice-template',
+        name: 'Invoice Template',
+        version: '1.0',
+        link: '/downloads/invoice-template.pdf',
+        platform: 'template',
+        description: 'PDF invoice template you can customize.',
+        isActive: true,
+        sortOrder: 3,
+      },
+      {
+        id: 'seed-receipt-template',
+        name: 'Receipt Template',
+        version: '1.0',
+        link: '/downloads/receipt-template.pdf',
+        platform: 'template',
+        description: 'PDF receipt template for printed receipts.',
+        isActive: true,
+        sortOrder: 4,
+      },
+    ]],
   ];
 
   let upserted = 0;

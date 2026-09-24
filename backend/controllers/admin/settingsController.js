@@ -1,5 +1,7 @@
+const crypto = require('crypto');
 const { asyncHandler } = require('../../utils/asyncHandler');
 const { ok } = require('../../utils/apiResponse');
+const { ApiError } = require('../../utils/apiError');
 const PlatformSetting = require('../../models/admin/PlatformSetting');
 const { invalidateBrand } = require('../../services/brandService');
 
@@ -39,6 +41,18 @@ const FEATURE_KEYS = [
   'feature_invoices',
 ];
 
+const DOWNLOAD_PLATFORMS = [
+  'web',
+  'windows',
+  'macos',
+  'linux',
+  'android',
+  'ios',
+  'api',
+  'template',
+  'other',
+];
+
 const get = asyncHandler(async (_req, res) => {
   const docs = await PlatformSetting.find().lean();
   const map = Object.fromEntries(docs.map((d) => [d.key, d.value]));
@@ -51,12 +65,12 @@ const update = asyncHandler(async (req, res) => {
 
   for (const [key, value] of Object.entries(updates)) {
     if (key.startsWith('feature_')) continue;
+    if (key === 'downloads') continue;
     await PlatformSetting.setValue(key, value, req.admin.id);
     results[key] = value;
   }
 
   invalidateBrand().catch(() => {});
-
   return ok(res, results);
 });
 
@@ -71,7 +85,6 @@ const updateFeatures = asyncHandler(async (req, res) => {
   }
 
   invalidateBrand().catch(() => {});
-
   return ok(res, results);
 });
 
@@ -87,4 +100,90 @@ const features = asyncHandler(async (_req, res) => {
   return ok(res, map);
 });
 
-module.exports = { get, update, updateFeatures, getPublic, features };
+const getDownloads = asyncHandler(async (_req, res) => {
+  const list = await PlatformSetting.getValue('downloads', []);
+  return ok(res, Array.isArray(list) ? list : []);
+});
+
+const createDownload = asyncHandler(async (req, res) => {
+  const { name, link, platform } = req.body;
+
+  if (!name || !link || !platform) {
+    throw ApiError.badRequest('MISSING_FIELDS', 'name, link, platform required');
+  }
+  if (!DOWNLOAD_PLATFORMS.includes(platform)) {
+    throw ApiError.badRequest('INVALID_PLATFORM', `Platform must be one of: ${DOWNLOAD_PLATFORMS.join(', ')}`);
+  }
+
+  const list = (await PlatformSetting.getValue('downloads', [])) || [];
+
+  const entry = {
+    id: crypto.randomUUID(),
+    name,
+    version: req.body.version || null,
+    link,
+    platform,
+    description: req.body.description || null,
+    isActive: req.body.isActive !== false,
+    sortOrder: req.body.sortOrder ?? list.length,
+    createdAt: new Date().toISOString(),
+  };
+
+  list.push(entry);
+  await PlatformSetting.setValue('downloads', list, req.admin.id);
+
+  return ok(res, entry);
+});
+
+const updateDownload = asyncHandler(async (req, res) => {
+  const { downloadId } = req.params;
+
+  const list = (await PlatformSetting.getValue('downloads', [])) || [];
+  const index = list.findIndex((d) => d.id === downloadId);
+
+  if (index === -1) {
+    throw ApiError.notFound('DOWNLOAD_NOT_FOUND', 'Download not found');
+  }
+
+  const allowed = ['name', 'version', 'link', 'platform', 'description', 'isActive', 'sortOrder'];
+  const patch = {};
+  for (const key of allowed) {
+    if (req.body[key] !== undefined) patch[key] = req.body[key];
+  }
+
+  if (patch.platform && !DOWNLOAD_PLATFORMS.includes(patch.platform)) {
+    throw ApiError.badRequest('INVALID_PLATFORM', `Platform must be one of: ${DOWNLOAD_PLATFORMS.join(', ')}`);
+  }
+
+  list[index] = { ...list[index], ...patch };
+  await PlatformSetting.setValue('downloads', list, req.admin.id);
+
+  return ok(res, list[index]);
+});
+
+const deleteDownload = asyncHandler(async (req, res) => {
+  const { downloadId } = req.params;
+
+  const list = (await PlatformSetting.getValue('downloads', [])) || [];
+  const next = list.filter((d) => d.id !== downloadId);
+
+  if (next.length === list.length) {
+    throw ApiError.notFound('DOWNLOAD_NOT_FOUND', 'Download not found');
+  }
+
+  await PlatformSetting.setValue('downloads', next, req.admin.id);
+
+  return ok(res, { deleted: true });
+});
+
+module.exports = {
+  get,
+  update,
+  updateFeatures,
+  getPublic,
+  features,
+  getDownloads,
+  createDownload,
+  updateDownload,
+  deleteDownload,
+};

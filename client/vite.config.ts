@@ -1,17 +1,34 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import path from 'node:path';
 
 export default defineConfig({
   plugins: [react()],
   resolve: {
-    extensions: ['.tsx', '.ts', '.jsx', '.js', '.json'],
+    alias: {
+      '@': path.resolve(__dirname, 'src'),
+    },
   },
   server: {
-    host: '0.0.0.0',
-    port: 5173,
+    port: 3000,
+    strictPort: true,
+    host: true,
   },
   preview: {
-    host: '0.0.0.0',
-    port: 4173,
+    port: 3000,
+    strictPort: true,
+  },
+  build: {
+    outDir: 'dist',
+    sourcemap: false,
+    chunkSizeWarningLimit: 1000,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor: ['react', 'react-dom', 'react-router-dom'],
+          ui: ['lucide-react'],
+        },
+      },
+    },
   },
 });

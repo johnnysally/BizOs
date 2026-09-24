@@ -10,6 +10,7 @@ const SuperAdmin = require('../../models/admin/SuperAdmin');
 const PendingActivation = require('../../models/admin/PendingActivation');
 const PlatformSetting = require('../../models/admin/PlatformSetting');
 const Plan = require('../../models/admin/Plan');
+const Invoice = require('../../models/client/Invoice');
 const emailService = require('../../services/emailService');
 const invoiceService = require('../../services/invoiceService');
 const { hashPassword, signAccessToken, signRefreshToken } = require('../../utils/jwt');
@@ -38,6 +39,26 @@ function formatDueDate(d) {
     timeStyle: 'short',
     timeZone: 'Africa/Nairobi',
   });
+}
+
+async function loadLatestInvoice(tenantId) {
+  const invoice = await Invoice.findOne({ tenantId })
+    .sort({ createdAt: -1 })
+    .select('invoiceNumber status amountDue amountPaid currency dueDate pdfUrl')
+    .lean();
+
+  if (!invoice) return null;
+
+  return {
+    number: invoice.invoiceNumber,
+    status: invoice.status,
+    amountDue: invoice.amountDue,
+    amountPaid: invoice.amountPaid,
+    currency: invoice.currency,
+    dueDate: invoice.dueDate,
+    pdfUrl: invoice.pdfUrl || null,
+    payUrl: `${env.appUrl}/pay/${invoice.invoiceNumber}`,
+  };
 }
 
 async function sendRegistrationEmails({ tenant, owner, plan }) {
@@ -99,11 +120,7 @@ async function sendRegistrationEmails({ tenant, owner, plan }) {
       });
 
       logger.info(
-        {
-          tenantId: tenant._id,
-          invoiceNumber: invoice.invoiceNumber,
-          methodCount: (invoice.paymentInstructions || []).length,
-        },
+        { tenantId: tenant._id, invoiceNumber: invoice.invoiceNumber },
         'invoice email sent'
       );
     } else {
@@ -306,10 +323,17 @@ const login = asyncHandler(async (req, res) => {
   await user.save();
 
   const plan = await Plan.findOne({ code: tenant.planId }).lean();
+  const invoice = scope === 'pending' ? await loadLatestInvoice(tenant._id) : null;
+
+  const message =
+    scope === 'pending'
+      ? 'Your account is pending review by the BizOS team. You will receive a notification once approved and can then log in.'
+      : null;
 
   return ok(res, {
     accessToken: signAccessToken(payload),
     refreshToken: signRefreshToken(payload),
+    message,
     user: {
       id: user._id,
       fullName: user.fullName,
@@ -333,6 +357,7 @@ const login = asyncHandler(async (req, res) => {
           features: plan.features,
         }
       : null,
+    invoice,
     scope,
   });
 });
@@ -454,9 +479,46 @@ const acceptInvite = asyncHandler(async (req, res) => {
   });
 });
 
+const refresh = asyncHandler(async (req, res) => {
+  const { refreshToken } = req.body;
+  if (!refreshToken) {
+    throw ApiError.badRequest('NO_REFRESH', 'Refresh token required');
+  }
+
+  const { verifyRefreshToken } = require('../../utils/jwt');
+  const payload = verifyRefreshToken(refreshToken);
+
+  if (payload.scope === 'platform') {
+    throw ApiError.forbidden('NOT_CLIENT', 'Invalid scope');
+  }
+
+  const user = await User.findById(payload.sub);
+  if (!user) throw ApiError.unauthorized('INVALID_USER', 'User not found');
+  if (!['active', 'pending_user'].includes(user.status)) {
+    throw ApiError.forbidden('INACTIVE', 'Account inactive');
+  }
+
+  const tenant = await Tenant.findById(user.tenantId).lean();
+  if (!tenant) throw ApiError.notFound('TENANT_NOT_FOUND', 'Tenant not found');
+
+  const scope = tenant.status === 'active' ? 'active' : 'pending';
+  const newPayload = {
+    sub: user._id.toString(),
+    tenantId: user.tenantId.toString(),
+    role: user.role,
+    scope,
+  };
+
+  return ok(res, {
+    accessToken: signAccessToken(newPayload),
+    refreshToken: signRefreshToken(newPayload),
+  });
+});
+
 module.exports = {
   register,
   login,
+  refresh,
   verifyEmail,
   forgotPassword,
   resetPassword,

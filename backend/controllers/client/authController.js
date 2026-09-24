@@ -1,8 +1,11 @@
 const { asyncHandler } = require('../../utils/asyncHandler');
 const { ok } = require('../../utils/apiResponse');
 const { ApiError } = require('../../utils/apiError');
+const { env } = require('../../config/env');
 const User = require('../../models/client/User');
 const Tenant = require('../../models/admin/Tenant');
+const Plan = require('../../models/admin/Plan');
+const Invoice = require('../../models/client/Invoice');
 const emailService = require('../../services/emailService');
 const {
   comparePassword,
@@ -11,6 +14,26 @@ const {
   signRefreshToken,
   verifyRefreshToken,
 } = require('../../utils/jwt');
+
+async function loadLatestInvoice(tenantId) {
+  const invoice = await Invoice.findOne({ tenantId })
+    .sort({ createdAt: -1 })
+    .select('invoiceNumber status amountDue amountPaid currency dueDate pdfUrl')
+    .lean();
+
+  if (!invoice) return null;
+
+  return {
+    number: invoice.invoiceNumber,
+    status: invoice.status,
+    amountDue: invoice.amountDue,
+    amountPaid: invoice.amountPaid,
+    currency: invoice.currency,
+    dueDate: invoice.dueDate,
+    pdfUrl: invoice.pdfUrl || null,
+    payUrl: `${env.appUrl}/pay/${invoice.invoiceNumber}`,
+  };
+}
 
 const logout = asyncHandler(async (_req, res) => {
   return ok(res, { loggedOut: true });
@@ -22,6 +45,11 @@ const me = asyncHandler(async (req, res) => {
 
   const tenant = await Tenant.findById(req.user.tenantId).lean();
   if (!tenant) throw ApiError.notFound('TENANT_NOT_FOUND', 'Tenant not found');
+
+  const plan = await Plan.findOne({ code: tenant.planId }).lean();
+
+  const invoice =
+    req.user.scope === 'pending' ? await loadLatestInvoice(tenant._id) : null;
 
   return ok(res, {
     user: {
@@ -39,6 +67,15 @@ const me = asyncHandler(async (req, res) => {
       status: tenant.status,
       planId: tenant.planId,
     },
+    plan: plan
+      ? {
+          code: plan.code,
+          name: plan.name,
+          limits: plan.limits,
+          features: plan.features,
+        }
+      : null,
+    invoice,
     scope: req.user.scope,
   });
 });

@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const Invoice = require('../models/client/Invoice');
 const paymentInstructionsService = require('./paymentInstructionsService');
 const { ApiError } = require('../utils/apiError');
@@ -5,10 +6,21 @@ const { logger } = require('../utils/logger');
 
 const DUE_HOURS = 3;
 
-async function nextInvoiceNumber(tenantId) {
-  const count = await Invoice.countDocuments({ tenantId });
-  const year = new Date().getFullYear();
-  return `INV-${year}-${String(count + 1).padStart(4, '0')}`;
+function generateInvoiceNumber() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const rand = crypto.randomBytes(8).toString('hex').toUpperCase();
+  return `INV-${year}${month}-${rand}`;
+}
+
+async function generateUniqueInvoiceNumber() {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const number = generateInvoiceNumber();
+    const exists = await Invoice.findOne({ invoiceNumber: number }).lean();
+    if (!exists) return number;
+  }
+  throw ApiError.internal('INVOICE_NUMBER_FAILED', 'Could not generate unique invoice number');
 }
 
 function intervalLabel(interval) {
@@ -26,7 +38,7 @@ async function generateRegistrationInvoice({ tenantId, owner, tenant, plan }) {
   const planName = plan?.name || 'Free';
   const label = intervalLabel(price.interval);
 
-  const invoiceNumber = await nextInvoiceNumber(tenantId);
+  const invoiceNumber = await generateUniqueInvoiceNumber();
   const issuedAt = new Date();
   const dueDate = new Date(issuedAt.getTime() + DUE_HOURS * 60 * 60 * 1000);
 
@@ -93,4 +105,9 @@ async function generateRegistrationInvoice({ tenantId, owner, tenant, plan }) {
   return { invoice, instructions };
 }
 
-module.exports = { generateRegistrationInvoice, nextInvoiceNumber, DUE_HOURS };
+module.exports = {
+  generateRegistrationInvoice,
+  generateInvoiceNumber,
+  generateUniqueInvoiceNumber,
+  DUE_HOURS,
+};

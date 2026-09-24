@@ -1,5 +1,5 @@
-const { PlatformSetting } = require('../models/admin/PlatformSetting');
-const { Legal } = require('../models/admin/Legal');
+const PlatformSetting = require('../models/admin/PlatformSetting');
+const Legal = require('../models/admin/Legal');
 
 const PUBLIC_SETTING_KEYS = [
   'platform_name', 'platform_logo_url', 'support_email', 'support_phone',
@@ -12,11 +12,16 @@ const PUBLIC_SETTING_KEYS = [
 
 const PUBLIC_FLAG_KEYS = ['registration_open', 'maintenance_mode'];
 
+async function readValue(key, fallback) {
+  const doc = await PlatformSetting.findOne({ key }).lean();
+  return doc?.value ?? fallback;
+}
+
 async function getSettings() {
   const docs = await PlatformSetting.find({ key: { $in: PUBLIC_SETTING_KEYS } }).lean();
   const m = Object.fromEntries(docs.map((d) => [d.key, d.value]));
   return {
-    platformName: m.platform_name || 'BizOS',
+    platformName: m.platform_name || 'SmartPOS',
     platformLogoUrl: m.platform_logo_url || null,
     supportEmail: m.support_email || null,
     supportPhone: m.support_phone || null,
@@ -37,15 +42,15 @@ async function getSettings() {
 }
 
 async function getBusinessTypes() {
-  return (await PlatformSetting.getValue('business_types', [])) || [];
+  return (await readValue('business_types', [])) || [];
 }
 
 async function getCountries() {
-  return (await PlatformSetting.getValue('countries', [])) || [];
+  return (await readValue('countries', [])) || [];
 }
 
 async function getCurrencies() {
-  return (await PlatformSetting.getValue('currencies', [])) || [];
+  return (await readValue('currencies', [])) || [];
 }
 
 async function getLegalLinks() {

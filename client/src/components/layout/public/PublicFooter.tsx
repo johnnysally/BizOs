@@ -1,9 +1,152 @@
 import { useState } from 'react';
-import { ArrowRight, Check, Mail, ShieldCheck, Users } from 'lucide-react';
-import type { AppPage } from '../../../routes/AppRoutes';
+import { Link } from 'react-router-dom';
+import { useSite } from '@/context/SiteContext';
+import { LegalModal } from '@/components/public/LegalModal';
+import { LEGAL_TYPES, ROUTES } from '@/utils/constants';
+import type { LegalType } from '@/types/legal';
 
-export function PublicFooter({ onNavigate }: { onNavigate: (page: AppPage) => void }) {
-  const [newsletterSent, setNewsletterSent] = useState(false);
+export function PublicFooter() {
+  const { settings } = useSite();
+  const [legal, setLegal] = useState<LegalType | null>(null);
+  const year = new Date().getFullYear();
+  const platformName = settings?.platformName || 'BizOS';
 
-  return <footer className="landing-footer"><div className="landing-footer-main"><div className="landing-footer-intro"><div className="landing-brand"><span className="landing-brand-mark">B</span><span><strong>BizOs</strong><small>Business OS</small></span></div><p>Retail operations,<br />made clear.</p><div className="landing-footer-status"><i /> All systems operational</div><div className="landing-socials"><a href="#workflow" aria-label="BizOs community" title="Community"><Users size={15} /></a><a href="#about" aria-label="BizOs security" title="Security"><ShieldCheck size={15} /></a><a href="#contact" aria-label="Contact BizOs" title="Email us"><Mail size={15} /></a></div></div><div className="landing-footer-column"><strong>Product</strong><a href="#home">Home</a><a href="#about">About us</a><a href="#plans">Plans</a><a href="#contact">Request a demo</a></div><div className="landing-footer-column"><strong>Company</strong><a href="#about">Why BizOs</a><a href="#contact">Contact us</a><button type="button" onClick={() => onNavigate('login')}>Sign in</button><button type="button" onClick={() => onNavigate('register')}>Create workspace</button></div><div className="landing-footer-newsletter"><strong>Useful things, occasionally.</strong><p>Product notes and practical ideas for better operations.</p><form onSubmit={(event) => { event.preventDefault(); setNewsletterSent(true); }}><input type="email" required placeholder="Your work email" aria-label="Your work email" /><button type="submit" aria-label="Subscribe to newsletter">{newsletterSent ? <Check size={16} /> : <ArrowRight size={16} />}</button></form><span>{newsletterSent ? 'You are on the list.' : 'No noise. Unsubscribe anytime.'}</span></div></div><div className="landing-footer-bottom"><span>© 2026 BizOs. Built for businesses in motion.</span><div><a href="#about">Privacy</a><a href="#plans">Terms</a><a href="#contact">Support</a></div><span>Made for the work that matters.</span></div></footer>;
+  return (
+    <>
+      <footer className="bg-slate-900 text-slate-300">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-14">
+          {/* Top: brand + columns */}
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-10 md:gap-8">
+            {/* Brand block */}
+            <div className="md:col-span-4">
+              <div className="flex items-center gap-2 mb-4">
+                <div className="w-8 h-8 rounded-lg bg-brand-600 flex items-center justify-center text-white text-sm font-bold">
+                  B
+                </div>
+                <span className="font-semibold text-white text-base">
+                  {platformName}
+                </span>
+              </div>
+              <p className="text-sm text-slate-400 max-w-xs leading-relaxed">
+                Run your whole business from one place. Point of sale,
+                inventory, staff, suppliers, invoices and AI insights.
+              </p>
+            </div>
+
+            {/* Product column */}
+            <div className="md:col-span-2">
+              <p className="text-xs font-semibold text-white uppercase tracking-wider mb-4">
+                Product
+              </p>
+              <ul className="space-y-3 text-sm">
+                <li>
+                  <Link
+                    to={ROUTES.pricing}
+                    className="text-slate-400 hover:text-white transition"
+                  >
+                    Pricing
+                  </Link>
+                </li>
+                <li>
+                  <Link
+                    to={ROUTES.help}
+                    className="text-slate-400 hover:text-white transition"
+                  >
+                    Help center
+                  </Link>
+                </li>
+                <li>
+                  <Link
+                    to={ROUTES.downloads}
+                    className="text-slate-400 hover:text-white transition"
+                  >
+                    Resources
+                  </Link>
+                </li>
+                <li>
+                  <Link
+                    to={ROUTES.register}
+                    className="text-slate-400 hover:text-white transition"
+                  >
+                    Get started
+                  </Link>
+                </li>
+              </ul>
+            </div>
+
+            {/* Support column */}
+            <div className="md:col-span-3">
+              <p className="text-xs font-semibold text-white uppercase tracking-wider mb-4">
+                Support
+              </p>
+              <ul className="space-y-3 text-sm">
+                {settings?.supportEmail && (
+                  <li>
+                    <a
+                      href={`mailto:${settings.supportEmail}`}
+                      className="text-slate-400 hover:text-white transition"
+                    >
+                      {settings.supportEmail}
+                    </a>
+                  </li>
+                )}
+                {settings?.supportPhone && (
+                  <li>
+                    <a
+                      href={`tel:${settings.supportPhone.replace(/\s+/g, '')}`}
+                      className="text-slate-400 hover:text-white transition"
+                    >
+                      {settings.supportPhone}
+                    </a>
+                  </li>
+                )}
+                <li>
+                  <Link
+                    to={ROUTES.help}
+                    className="text-slate-400 hover:text-white transition"
+                  >
+                    Contact us
+                  </Link>
+                </li>
+              </ul>
+            </div>
+
+            {/* Legal column */}
+            <div className="md:col-span-3">
+              <p className="text-xs font-semibold text-white uppercase tracking-wider mb-4">
+                Legal
+              </p>
+              <ul className="space-y-3 text-sm">
+                {LEGAL_TYPES.map((type) => (
+                  <li key={type}>
+                    <button
+                      type="button"
+                      onClick={() => setLegal(type)}
+                      className="text-slate-400 hover:text-white transition capitalize text-left"
+                    >
+                      {type}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+
+          {/* Bottom bar */}
+          <div className="mt-12 pt-6 border-t border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3">
+            <p className="text-xs text-slate-500">
+              © {year} {platformName}. All rights reserved.
+            </p>
+            <p className="text-xs text-slate-500">Made in Kenya</p>
+          </div>
+        </div>
+      </footer>
+
+      <LegalModal
+        open={!!legal}
+        onClose={() => setLegal(null)}
+        type={legal || 'terms'}
+      />
+    </>
+  );
 }

@@ -11,5 +11,6 @@ router.get('/legal-links', c.getLegalLinks);
 router.get('/feature-flags', c.getFeatureFlags);
 router.get('/features', c.getFeatureMap);
 router.get('/plans', c.getPlans);
+router.get('/downloads', c.getDownloads);
 
 module.exports = router;
