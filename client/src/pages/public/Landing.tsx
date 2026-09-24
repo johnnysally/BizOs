@@ -1,7 +1,8 @@
-﻿import { ArrowRight, BarChart3, Check, ChevronRight, CircleDollarSign, Menu, PackageCheck, ShoppingCart, Sparkles, Store, X } from 'lucide-react';
+﻿import { ArrowRight, BarChart3, Bot, Check, ChevronRight, CircleDollarSign, Menu, MessageCircle, PackageCheck, Send, ShoppingCart, Sparkles, Store, X } from 'lucide-react';
 import { useState } from 'react';
 import type { AppPage } from '../../routes/AppRoutes';
 import { PublicFooter } from '../../components/layout/public/PublicFooter';
+import { publicChatApi } from '../../api/chat';
 
 const featureRows = [
   { icon: ShoppingCart, title: 'Sell at the speed of service', text: 'A focused checkout that keeps scanning, payments, and receipts in one clean rhythm.' },
@@ -9,9 +10,38 @@ const featureRows = [
   { icon: BarChart3, title: 'See the whole business', text: 'Live reporting for revenue, margins, branches, and the people making it happen.' },
 ];
 
+type ChatMessage = { role: 'assistant' | 'user'; content: string };
+
+const starterMessage: ChatMessage = {
+  role: 'assistant',
+  content: 'Hi, I’m the BizOs guide. Ask me anything about running sales, stock, or branches.',
+};
+
 export function Landing({ onNavigate }: { onNavigate: (page: AppPage) => void }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [contactSent, setContactSent] = useState(false);
+  const [chatOpen, setChatOpen] = useState(true);
+  const [chatInput, setChatInput] = useState('');
+  const [chatLoading, setChatLoading] = useState(false);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([starterMessage]);
+
+  const sendChatMessage = async (preset?: string) => {
+    const text = (preset ?? chatInput).trim();
+    if (!text || chatLoading) return;
+
+    setChatInput('');
+    setChatMessages((current) => [...current, { role: 'user', content: text }]);
+    setChatLoading(true);
+
+    try {
+      const response = await publicChatApi.message(text);
+      setChatMessages((current) => [...current, { role: 'assistant', content: response.reply }]);
+    } catch {
+      setChatMessages((current) => [...current, { role: 'assistant', content: 'I’m having trouble connecting right now. You can reach our team at hello@bizos.co.ke.' }]);
+    } finally {
+      setChatLoading(false);
+    }
+  };
 
   return (
     <main className="landing-page">
@@ -30,6 +60,19 @@ export function Landing({ onNavigate }: { onNavigate: (page: AppPage) => void })
       <section className="landing-contact" id="contact"><div className="landing-contact-copy"><div className="landing-section-label"><span>03</span><span>Let&apos;s talk</span></div><h2>Questions are<br /><em>good business.</em></h2><p>Tell us what you are building, fixing, or trying to make simpler. Our team will get back to you within one business day.</p><div className="landing-contact-details"><div><strong>hello@bizos.co.ke</strong><span>General enquiries</span></div><div><strong>+254 712 000 111</strong><span>Mon - Fri, 8am - 5pm EAT</span></div></div></div><form className="landing-contact-form" onSubmit={(event) => { event.preventDefault(); setContactSent(true); }}><div className="landing-form-row"><label className="field"><span>Your name</span><input required placeholder="Jane Mwangi" /></label><label className="field"><span>Work email</span><input required type="email" placeholder="jane@business.co.ke" /></label></div><label className="field"><span>How can we help?</span><select defaultValue=""><option value="" disabled>Select a topic</option><option>Product walkthrough</option><option>Moving from another POS</option><option>Branches and inventory</option><option>Something else</option></select></label><label className="field"><span>Message</span><textarea required rows={4} placeholder="Tell us a little about your operation..." /></label><button className="primary-button" type="submit">{contactSent ? 'Message sent' : 'Send message'} <ArrowRight size={16} /></button>{contactSent && <span className="landing-form-success"><Check size={15} /> Thanks, we&apos;ll be in touch shortly.</span>}</form></section>
 
       <section className="landing-cta"><div className="landing-cta-mark"><Store size={25} /></div><div><span className="landing-kicker">Your next shift starts here</span><h2>Run the business.<br /><em>Not the busywork.</em></h2></div><button className="primary-button large" type="button" onClick={() => onNavigate('register')}>Get started free <ArrowRight size={17} /></button></section>
+
+      <aside className={`landing-chat ${chatOpen ? 'is-open' : ''}`} aria-label="BizOs assistant">
+        {chatOpen && <div className="landing-chat-panel">
+          <div className="landing-chat-header"><div className="landing-chat-title"><span><Bot size={17} /></span><div><strong>BizOs guide</strong><small><i /> Usually replies instantly</small></div></div><button type="button" onClick={() => setChatOpen(false)} aria-label="Close chat"><X size={17} /></button></div>
+          <div className="landing-chat-messages">
+            {chatMessages.map((message, index) => <div className={`landing-chat-message ${message.role}`} key={`${message.role}-${index}`}><span>{message.role === 'assistant' ? <Bot size={14} /> : 'You'}</span><p>{message.content}</p></div>)}
+            {chatLoading && <div className="landing-chat-message assistant"><span><Bot size={14} /></span><p className="landing-chat-typing"><i /><i /><i /></p></div>}
+          </div>
+          <div className="landing-chat-prompts"><button type="button" onClick={() => sendChatMessage('What can BizOs help my business with?')}>What can BizOs do?</button><button type="button" onClick={() => sendChatMessage('How does inventory management work?')}>Inventory help</button></div>
+          <form className="landing-chat-form" onSubmit={(event) => { event.preventDefault(); void sendChatMessage(); }}><input value={chatInput} onChange={(event) => setChatInput(event.target.value)} placeholder="Ask the BizOs guide..." aria-label="Message the BizOs guide" /><button type="submit" aria-label="Send message" disabled={chatLoading || !chatInput.trim()}><Send size={16} /></button></form>
+        </div>}
+        <button className="landing-chat-launcher" type="button" onClick={() => setChatOpen((current) => !current)} aria-label={chatOpen ? 'Minimize BizOs guide' : 'Open BizOs guide'}>{chatOpen ? <X size={20} /> : <MessageCircle size={21} />}<span>Ask BizOs</span></button>
+      </aside>
 
       <PublicFooter onNavigate={onNavigate} />
     </main>
