@@ -8,6 +8,11 @@ import {
   HardDrive,
   DatabaseBackup,
   RefreshCw,
+  Activity,
+  CheckCircle2,
+  Cpu,
+  Gauge,
+  MemoryStick,
 } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
@@ -15,6 +20,7 @@ import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
 import { healthApi } from '@/api/health';
 import type { HealthResponse } from '@/types/health';
+import type { HealthMetricsResponse } from '@/types/health';
 import { bytes } from '@/utils/format';
 
 function StatusDot({ status }: { status: string }) {
@@ -26,12 +32,15 @@ function StatusDot({ status }: { status: string }) {
 
 export default function Health() {
   const [data, setData] = useState<HealthResponse | null>(null);
+  const [metrics, setMetrics] = useState<HealthMetricsResponse | null>(null);
   const [loading, setLoading] = useState(true);
 
   const load = async () => {
     setLoading(true);
     try {
-      setData(await healthApi.get());
+      const [health, runtime] = await Promise.all([healthApi.get(), healthApi.metrics()]);
+      setData(health);
+      setMetrics(runtime);
     } finally {
       setLoading(false);
     }
@@ -55,16 +64,21 @@ export default function Health() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
+      <section className="flex flex-col gap-5 rounded-xl border border-slate-200 bg-white p-5 shadow-sm sm:flex-row sm:items-end sm:justify-between sm:p-6">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">System health</h1>
-          <p className="text-sm text-slate-500 mt-1">
+          <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-emerald-700"><Activity size={12} /> Live monitoring</div>
+          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">System health</h1>
+          <p className="mt-1 text-sm text-slate-500">
             {data.overall.up}/{data.overall.total} services up · updated {new Date(data.timestamp).toLocaleTimeString()}
           </p>
         </div>
-        <Button variant="outline" icon={<RefreshCw size={14} />} onClick={load} loading={loading}>
-          Refresh
-        </Button>
+        <div className="flex items-center gap-3"><span className="hidden items-center gap-1.5 text-xs font-medium text-emerald-600 sm:inline-flex"><span className="h-2 w-2 rounded-full bg-emerald-500" /> {data.status}</span><Button variant="outline" icon={<RefreshCw size={14} />} onClick={load} loading={loading}>Refresh</Button></div>
+      </section>
+
+      <div className="grid gap-4 sm:grid-cols-3">
+        <RuntimeMetric icon={<Gauge size={18} />} label="Service availability" value={`${data.overall.up}/${data.overall.total}`} detail="healthy services" />
+        <RuntimeMetric icon={<Cpu size={18} />} label="Runtime memory" value={`${metrics?.memory.heapUsedMb ?? data.server.memoryHeapUsedMb} MB`} detail={`${metrics?.memory.heapTotalMb ?? 0} MB heap capacity`} />
+        <RuntimeMetric icon={<MemoryStick size={18} />} label="Process uptime" value={metrics?.uptimeHuman || data.server.uptimeHuman} detail={`${metrics?.cpu.cores ?? data.server.cpuCores} CPU cores available`} />
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -149,6 +163,16 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
     <div className="flex justify-between items-center gap-3">
       <span className="text-slate-500">{label}</span>
       <span className="text-slate-900 text-right">{children}</span>
+    </div>
+  );
+}
+
+function RuntimeMetric({ icon, label, value, detail }: { icon: React.ReactNode; label: string; value: string; detail: string }) {
+  return (
+    <div className="flex items-start gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-brand-50 text-brand-600">{icon}</span>
+      <div className="min-w-0"><p className="text-xs text-slate-500">{label}</p><p className="mt-1 truncate text-lg font-semibold text-slate-900">{value}</p><p className="mt-0.5 truncate text-[11px] text-slate-400">{detail}</p></div>
+      <CheckCircle2 className="ml-auto shrink-0 text-emerald-500" size={16} />
     </div>
   );
 }

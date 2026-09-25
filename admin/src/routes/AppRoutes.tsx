@@ -7,6 +7,7 @@ import { Spinner } from '@/components/ui/Spinner';
 const Login = lazy(() => import('@/pages/Login'));
 const Dashboard = lazy(() => import('@/pages/Dashboard'));
 const Tenants = lazy(() => import('@/pages/Tenants'));
+const Admins = lazy(() => import('@/pages/Admins'));
 const TenantDetail = lazy(() => import('@/pages/TenantDetail'));
 const Pending = lazy(() => import('@/pages/Pending'));
 const PendingDetail = lazy(() => import('@/pages/PendingDetail'));
@@ -65,6 +66,7 @@ export const AppRoutes: RouteObject[] = [
         children: [
           { index: true, element: wrap(<Dashboard />) },
           { path: 'tenants', element: wrap(<Tenants />) },
+          { path: 'admins', element: wrap(<Admins />) },
           { path: 'tenants/:id', element: wrap(<TenantDetail />) },
           { path: 'pending', element: wrap(<Pending />) },
           { path: 'pending/:id', element: wrap(<PendingDetail />) },

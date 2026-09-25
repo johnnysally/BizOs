@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
   Menu,
   X,
@@ -9,6 +9,9 @@ import {
   Sun,
   Moon,
   Bell,
+  CircleCheck,
+  ArrowUpRight,
+  Zap,
   LayoutDashboard,
   ShoppingCart,
   Receipt,
@@ -32,6 +35,7 @@ import { classNames } from '@/utils/classNames';
 import { initials } from '@/utils/format';
 import { ROUTES, ROLES } from '@/utils/constants';
 import { canManageSettings } from '@/utils/permissions';
+import { insightApi } from '@/api/insights';
 
 const ALL = [ROLES.OWNER, ROLES.MANAGER, ROLES.CASHIER];
 const MGMT = [ROLES.OWNER, ROLES.MANAGER];
@@ -90,20 +94,44 @@ const MOBILE_SECTIONS: Array<{
 
 export function AppHeader() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, tenant, logout } = useAuth();
   const { settings } = useClient();
   const { theme, toggle } = useTheme();
   const [open, setOpen] = useState(false);
+  const [notificationCount, setNotificationCount] = useState(0);
 
   const role = user?.role || ROLES.CASHIER;
+
+  useEffect(() => {
+    let active = true;
+    insightApi.stockAlerts()
+      .then((alerts) => {
+        if (active) setNotificationCount(alerts.length);
+      })
+      .catch(() => {
+        if (active) setNotificationCount(0);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const visibleSections = MOBILE_SECTIONS.map((section) => ({
     ...section,
     items: section.items.filter((item) => item.roles.includes(role)),
   })).filter((section) => section.items.length > 0);
 
+  const currentPage = visibleSections
+    .flatMap((section) => section.items)
+    .find((item) => item.to === ROUTES.app
+      ? location.pathname === item.to
+      : location.pathname.startsWith(item.to))?.label
+    || (location.pathname === ROUTES.notifications ? 'Notifications' : 'Workspace');
+
   return (
-    <header className="h-16 shrink-0 bg-surface border-b border-border relative">
+    <header className="h-16 shrink-0 bg-surface border-b border-border relative z-10">
       <div className="h-full px-4 sm:px-6 flex items-center justify-between gap-4">
         <div className="flex items-center gap-3 min-w-0">
           <button
@@ -120,7 +148,7 @@ export function AppHeader() {
               <img src={settings.logoUrl} alt={tenant?.name} className="h-8" />
             ) : (
               <div className="w-8 h-8 rounded-lg bg-brand-600 flex items-center justify-center text-white text-sm font-bold shrink-0">
-                B
+                {(tenant?.name || 'BizOS').charAt(0).toUpperCase()}
               </div>
             )}
             <div className="min-w-0">
@@ -132,22 +160,55 @@ export function AppHeader() {
               </p>
             </div>
           </div>
+
+          <div className="hidden md:block min-w-0 border-l border-border pl-4">
+            <div className="flex items-center gap-2">
+              <p className="text-sm font-semibold text-fg leading-none truncate">{currentPage}</p>
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300">
+                <CircleCheck size={10} /> Live
+              </span>
+            </div>
+            <p className="text-[11px] text-muted leading-none mt-1 truncate">
+              {tenant?.name || 'Your workspace'} <span className="px-1 text-border">/</span> {role}
+            </p>
+          </div>
         </div>
 
         <div className="flex items-center gap-1 shrink-0">
           <button
             type="button"
-            className="p-2 rounded-md hover:bg-elevated text-muted"
-            aria-label="Notifications"
+            onClick={() => navigate(ROUTES.pos)}
+            className="hidden sm:inline-flex items-center gap-1.5 rounded-md bg-brand-600 px-3 py-2 text-xs font-semibold text-white shadow-sm shadow-brand-600/20 transition hover:bg-brand-700"
+            aria-label="Start a new sale"
           >
-            <Bell size={18} />
+            <Zap size={14} />
+            <span>New sale</span>
+            <ArrowUpRight size={13} className="opacity-70" />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => navigate(ROUTES.notifications)}
+            className="p-2 rounded-md hover:bg-elevated hover:text-fg text-muted transition"
+            aria-label="Notifications"
+            title="Notifications"
+          >
+            <span className="relative block">
+              <Bell size={18} />
+              {notificationCount > 0 && (
+                <span className="absolute -right-2 -top-2 min-w-4 h-4 px-1 rounded-full bg-brand-600 text-white text-[9px] leading-4 text-center font-semibold">
+                  {notificationCount > 9 ? '9+' : notificationCount}
+                </span>
+              )}
+            </span>
           </button>
 
           <button
             type="button"
             onClick={toggle}
-            className="p-2 rounded-md hover:bg-elevated text-muted"
+            className="p-2 rounded-md hover:bg-elevated hover:text-fg text-muted transition"
             aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+            title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
           >
             {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
           </button>
@@ -155,7 +216,7 @@ export function AppHeader() {
           <Dropdown
             trigger={
               <div className="flex items-center gap-2 px-2 py-1 rounded-md hover:bg-elevated transition cursor-pointer">
-                <div className="w-8 h-8 rounded-full bg-brand-600 text-white flex items-center justify-center text-xs font-semibold">
+                <div className="w-8 h-8 rounded-full bg-brand-600 text-white ring-2 ring-brand-100 dark:ring-brand-500/20 flex items-center justify-center text-xs font-semibold">
                   {user ? initials(user.fullName) : '?'}
                 </div>
                 <div className="hidden lg:block text-left">
@@ -194,6 +255,8 @@ export function AppHeader() {
         </div>
       </div>
 
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-brand-500/50 to-transparent" />
+
       {open && (
         <div className="md:hidden absolute top-16 left-0 right-0 bg-surface border-b border-border shadow-lg max-h-[calc(100vh-4rem)] overflow-y-auto z-20">
           <nav className="p-3 space-y-4">
@@ -216,8 +279,10 @@ export function AppHeader() {
                           navigate(item.to);
                         }}
                         className={classNames(
-                          'w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium text-left',
-                          'text-muted hover:bg-elevated hover:text-fg'
+                          'w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium text-left transition',
+                          location.pathname === item.to || (item.to !== ROUTES.app && location.pathname.startsWith(item.to))
+                            ? 'bg-brand-50 text-brand-700 dark:bg-brand-500/10 dark:text-brand-300'
+                            : 'text-muted hover:bg-elevated hover:text-fg'
                         )}
                       >
                         <Icon size={16} />
