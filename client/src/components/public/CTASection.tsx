@@ -8,13 +8,14 @@ export function CTASection() {
   const { settings } = useSite();
 
   return (
-    <section className="bg-slate-900 py-16 md:py-20">
+    <section className="border-y border-slate-200 bg-slate-50 py-16 md:py-20">
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-        <h2 className="text-3xl sm:text-4xl font-bold text-white">
+        <p className="mb-3 text-xs font-bold uppercase tracking-wider text-brand-600">A clearer way forward</p>
+        <h2 className="text-3xl sm:text-4xl font-bold text-slate-900">
           Ready to run your business on{' '}
           {settings?.platformName || 'BizOS'}?
         </h2>
-        <p className="mt-4 text-lg text-slate-300">
+        <p className="mt-4 text-lg text-slate-600">
           Get started in minutes. No credit card required.
         </p>
 
@@ -24,7 +25,6 @@ export function CTASection() {
               size="lg"
               fullWidth
               icon={<ArrowRight size={18} />}
-              className="!bg-white !text-slate-900 hover:!bg-slate-100"
             >
               Get started
             </Button>
@@ -36,9 +36,8 @@ export function CTASection() {
             >
               <Button
                 size="lg"
-                variant="ghost"
+                variant="outline"
                 fullWidth
-                className="!text-white hover:!bg-white/10"
               >
                 Call {settings.supportPhone}
               </Button>
