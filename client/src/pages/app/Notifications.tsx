@@ -1,220 +1,529 @@
-import { useMemo, useRef, useState } from 'react';
-import { useEffect } from 'react';
-import { insightApi } from '@/api/insights';
-import { AlertTriangle, Archive, Bell, Check, CheckCircle2, Clock3, Info, Search, SlidersHorizontal, X } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  AlertTriangle,
+  AlertCircle,
+  CheckCircle2,
+  Info,
+  Search,
+  RefreshCw,
+  Bell,
+  Archive,
+  Clock,
+} from 'lucide-react';
+import { Card } from '@/components/ui/Card';
+import { Button } from '@/components/ui/Button';
+import { Input } from '@/components/ui/Input';
+import { Badge } from '@/components/ui/Badge';
+import { Spinner } from '@/components/ui/Spinner';
+import { classNames } from '@/utils/classNames';
+import { useNotifications } from '@/context/NotificationContext';
+import {
+  notificationApi,
+  AppNotification,
+  NotificationSeverity,
+  NotificationSummary,
+} from '@/api/notifications';
+import { relativeTime } from '@/utils/date';
 
-type AlertType = 'warning' | 'danger' | 'success' | 'info';
-type AlertFilter = 'all' | 'unread' | AlertType;
+const PAGE_SIZE = 30;
 
-type Alert = {
-  id: number;
-  title: string;
-  detail: string;
-  type: AlertType;
-  source: string;
-  time: string;
-  unread: boolean;
-  snoozed: boolean;
-};
+type Filter = 'all' | 'unread' | NotificationSeverity;
 
-const initialAlerts: Alert[] = [];
-
-const typeLabels: Array<{ id: AlertFilter; label: string }> = [
-  { id: 'all', label: 'All alerts' },
+const FILTERS: Array<{ id: Filter; label: string }> = [
+  { id: 'all', label: 'All' },
   { id: 'unread', label: 'Unread' },
   { id: 'danger', label: 'Critical' },
   { id: 'warning', label: 'Warnings' },
   { id: 'success', label: 'Updates' },
+  { id: 'info', label: 'Info' },
 ];
 
+const SEVERITY_ICON: Record<
+  NotificationSeverity,
+  typeof AlertCircle
+> = {
+  danger: AlertCircle,
+  warning: AlertTriangle,
+  success: CheckCircle2,
+  info: Info,
+};
+
+const SEVERITY_VARIANT: Record<
+  NotificationSeverity,
+  'danger' | 'warning' | 'success' | 'info'
+> = {
+  danger: 'danger',
+  warning: 'warning',
+  success: 'success',
+  info: 'info',
+};
+
+const SEVERITY_ROW: Record<NotificationSeverity, string> = {
+  danger:
+    'border-l-red-500 bg-red-50/40 dark:bg-red-500/5',
+  warning:
+    'border-l-amber-500 bg-amber-50/40 dark:bg-amber-500/5',
+  success:
+    'border-l-green-500 bg-green-50/40 dark:bg-green-500/5',
+  info:
+    'border-l-blue-500 bg-blue-50/40 dark:bg-blue-500/5',
+};
+
 export function Notifications() {
-  const [alerts, setAlerts] = useState(initialAlerts);
-  const [filter, setFilter] = useState<AlertFilter>('all');
+  const { toast } = useNotifications();
+
+  const [items, setItems] = useState<AppNotification[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [loading, setLoading] = useState(true);
+
+  const [filter, setFilter] = useState<Filter>('all');
   const [search, setSearch] = useState('');
-  const [showPreferences, setShowPreferences] = useState(false);
-  const [notice, setNotice] = useState('');
-  const [preferences, setPreferences] = useState({ stock: true, credit: true, sales: true, team: true, email: false, push: true });
-  const searchInputRef = useRef<HTMLInputElement>(null);
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+
+  const [summary, setSummary] = useState<NotificationSummary | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
 
   useEffect(() => {
-    const focusSearch = (event: KeyboardEvent) => {
-      if (event.key === '/' && document.activeElement?.tagName !== 'INPUT') {
-        event.preventDefault();
-        searchInputRef.current?.focus();
-      }
-    };
+    const t = setTimeout(() => {
+      setDebouncedSearch(search);
+      setPage(1);
+    }, 300);
+    return () => clearTimeout(t);
+  }, [search]);
 
-    window.addEventListener('keydown', focusSearch);
-    return () => window.removeEventListener('keydown', focusSearch);
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await notificationApi.list({
+        page,
+        limit: PAGE_SIZE,
+        filter,
+        search: debouncedSearch || undefined,
+      });
+      setItems(res.data);
+      setTotal(res.meta.total);
+    } catch (e) {
+      toast({
+        type: 'error',
+        message: (e as { message?: string }).message || 'Could not load alerts',
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, [page, filter, debouncedSearch, toast]);
+
+  const loadSummary = useCallback(async () => {
+    try {
+      const s = await notificationApi.summary();
+      setSummary(s);
+    } catch {
+      /* silent */
+    }
   }, []);
 
   useEffect(() => {
-    let active = true;
-    insightApi.stockAlerts().then((stockAlerts) => {
-      if (!active) return;
-      const inventoryAlerts: Alert[] = stockAlerts.map((alert) => ({
-        id: Number.parseInt(alert._id.slice(-8), 16) || Date.now(),
-        title: alert.stock === 0 ? 'Out of stock' : 'Low stock alert',
-        detail: `${alert.name} has ${alert.stock} units remaining. Reorder recommended.`,
-        type: alert.stock === 0 ? 'danger' : 'warning',
-        source: 'Inventory',
-        time: 'Just now',
-        unread: true,
-        snoozed: false,
-      }));
-      setAlerts((current) => [
-        ...inventoryAlerts,
-        ...current.filter((alert) => alert.source !== 'Inventory'),
-      ]);
-    }).catch(() => {
-      // Other alert sources remain available when inventory alerts cannot be loaded.
-    });
+    load();
+  }, [load]);
 
-    return () => {
-      active = false;
-    };
-  }, []);
+  useEffect(() => {
+    loadSummary();
+  }, [loadSummary]);
 
-  const unreadCount = alerts.filter((alert) => alert.unread && !alert.snoozed).length;
-  const visibleAlerts = useMemo(() => alerts.filter((alert) => {
-    if (alert.snoozed) return false;
-    const matchesFilter = filter === 'all' || (filter === 'unread' ? alert.unread : alert.type === filter);
-    const matchesSearch = `${alert.title} ${alert.detail} ${alert.source}`.toLowerCase().includes(search.toLowerCase());
-    return matchesFilter && matchesSearch;
-  }), [alerts, filter, search]);
+  const refresh = () => {
+    load();
+    loadSummary();
+  };
 
-  const markRead = (id: number) => setAlerts((current) => current.map((alert) => alert.id === id ? { ...alert, unread: false } : alert));
-  const archive = (id: number) => setAlerts((current) => current.filter((alert) => alert.id !== id));
-  const snooze = (id: number) => { setAlerts((current) => current.map((alert) => alert.id === id ? { ...alert, snoozed: true } : alert)); setNotice('Alert snoozed for later'); };
-  const markAllRead = () => { setAlerts((current) => current.map((alert) => ({ ...alert, unread: false }))); setNotice('All alerts marked as read'); };
-  const clearRead = () => { setAlerts((current) => current.filter((alert) => alert.unread)); setNotice('Read alerts cleared'); };
-  const togglePreference = (key: keyof typeof preferences) => setPreferences((current) => ({ ...current, [key]: !current[key] }));
+  const markRead = async (id: string) => {
+    setBusy(id);
+    try {
+      await notificationApi.markRead(id);
+      setItems((cur) =>
+        cur.map((n) =>
+          n._id === id ? { ...n, readAt: new Date().toISOString() } : n
+        )
+      );
+      loadSummary();
+    } catch (e) {
+      toast({
+        type: 'error',
+        message: (e as { message?: string }).message || 'Mark read failed',
+      });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const markAllRead = async () => {
+    setBusy('all');
+    try {
+      const r = await notificationApi.markAllRead();
+      setItems((cur) =>
+        cur.map((n) => ({ ...n, readAt: n.readAt || new Date().toISOString() }))
+      );
+      loadSummary();
+      toast({
+        type: 'success',
+        message: `${r.modified} alert${r.modified === 1 ? '' : 's'} marked read`,
+      });
+    } catch (e) {
+      toast({
+        type: 'error',
+        message: (e as { message?: string }).message || 'Failed',
+      });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const snooze = async (id: string) => {
+    setBusy(id);
+    try {
+      await notificationApi.snooze(id);
+      setItems((cur) => cur.filter((n) => n._id !== id));
+      loadSummary();
+      toast({ type: 'success', message: 'Snoozed' });
+    } catch (e) {
+      toast({
+        type: 'error',
+        message: (e as { message?: string }).message || 'Snooze failed',
+      });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const archive = async (id: string) => {
+    setBusy(id);
+    try {
+      await notificationApi.archive(id);
+      setItems((cur) => cur.filter((n) => n._id !== id));
+      loadSummary();
+      toast({ type: 'success', message: 'Archived' });
+    } catch (e) {
+      toast({
+        type: 'error',
+        message: (e as { message?: string }).message || 'Archive failed',
+      });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const clearRead = async () => {
+    if (!window.confirm('Delete all read alerts?')) return;
+    setBusy('clear');
+    try {
+      const r = await notificationApi.clearRead();
+      setItems((cur) => cur.filter((n) => !n.readAt));
+      loadSummary();
+      toast({
+        type: 'success',
+        message: `${r.deleted} cleared`,
+      });
+    } catch (e) {
+      toast({
+        type: 'error',
+        message: (e as { message?: string }).message || 'Clear failed',
+      });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+  const stats = useMemo(
+    () => ({
+      danger: summary?.danger ?? 0,
+      warning: summary?.warning ?? 0,
+      unread: summary?.unread ?? 0,
+      success: summary?.success ?? 0,
+    }),
+    [summary]
+  );
 
   return (
-    <div className="min-h-full bg-bg px-4 py-5 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-6xl space-y-5">
-        <section className="flex flex-col gap-4 border-b border-border pb-5 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-brand-600 dark:text-brand-300">
-              <Bell size={14} />
-              Operations center
-            </div>
-            <h1 className="text-2xl font-semibold tracking-tight text-fg sm:text-3xl">Alerts & notifications</h1>
-            <p className="mt-1.5 max-w-2xl text-sm text-muted">Triage important events across sales, inventory, finance, and your team.</p>
-          </div>
+    <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 space-y-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div>
           <div className="flex items-center gap-2">
-            <span className="rounded-full bg-brand-50 px-3 py-1.5 text-xs font-semibold text-brand-700 dark:bg-brand-500/10 dark:text-brand-300">
-              {unreadCount} unread
-            </span>
-            <button
-              className="inline-flex items-center gap-2 rounded-md border border-border bg-surface px-3 py-2 text-xs font-semibold text-fg transition hover:bg-elevated"
-              type="button"
-              onClick={() => setShowPreferences((current) => !current)}
-            >
-              <SlidersHorizontal size={14} />
-              {showPreferences ? 'Hide preferences' : 'Preferences'}
-            </button>
+            <Bell size={20} className="text-brand-600 dark:text-brand-400" />
+            <h1 className="text-2xl font-semibold text-fg">Alerts</h1>
           </div>
-        </section>
+          <p className="text-sm text-muted mt-1">
+            {stats.unread} unread · {total} total
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            icon={<RefreshCw size={14} />}
+            onClick={refresh}
+          >
+            Refresh
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={markAllRead}
+            loading={busy === 'all'}
+            disabled={stats.unread === 0}
+          >
+            Mark all read
+          </Button>
+        </div>
+      </div>
 
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          {[
-            { label: 'Critical issues', value: alerts.filter((alert) => alert.type === 'danger').length, icon: AlertTriangle, tone: 'text-red-600 bg-red-50 dark:bg-red-500/10 dark:text-red-300' },
-            { label: 'Warnings', value: alerts.filter((alert) => alert.type === 'warning').length, icon: AlertTriangle, tone: 'text-amber-600 bg-amber-50 dark:bg-amber-500/10 dark:text-amber-300' },
-            { label: 'Unread alerts', value: alerts.filter((alert) => alert.unread).length, icon: Bell, tone: 'text-brand-600 bg-brand-50 dark:bg-brand-500/10 dark:text-brand-300' },
-            { label: 'Positive updates', value: alerts.filter((alert) => alert.type === 'success').length, icon: CheckCircle2, tone: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-500/10 dark:text-emerald-300' },
-          ].map((summary) => {
-            const Icon = summary.icon;
-            return (
-              <div className="flex items-center gap-3 rounded-lg border border-border bg-surface p-4" key={summary.label}>
-                <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md ${summary.tone}`}><Icon size={17} /></span>
-                <span><strong className="block text-xl font-semibold text-fg">{summary.value}</strong><span className="text-xs text-muted">{summary.label}</span></span>
-              </div>
-            );
-          })}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <SummaryCard
+          label="Critical"
+          value={stats.danger}
+          icon={<AlertCircle size={18} />}
+          tone="danger"
+        />
+        <SummaryCard
+          label="Warnings"
+          value={stats.warning}
+          icon={<AlertTriangle size={18} />}
+          tone="warning"
+        />
+        <SummaryCard
+          label="Unread"
+          value={stats.unread}
+          icon={<Clock size={18} />}
+          tone="info"
+        />
+        <SummaryCard
+          label="Updates"
+          value={stats.success}
+          icon={<CheckCircle2 size={18} />}
+          tone="success"
+        />
+      </div>
+
+      <Card padded={false}>
+        <div className="flex flex-col sm:flex-row gap-2 p-4 border-b border-border">
+          <div className="flex flex-wrap gap-1">
+            {FILTERS.map((f) => (
+              <button
+                key={f.id}
+                type="button"
+                onClick={() => {
+                  setFilter(f.id);
+                  setPage(1);
+                }}
+                className={classNames(
+                  'px-3 py-1.5 rounded-md text-sm font-medium transition whitespace-nowrap',
+                  filter === f.id
+                    ? 'bg-brand-600 text-white'
+                    : 'bg-elevated text-muted hover:text-fg'
+                )}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+          <div className="flex-1 sm:max-w-xs">
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search alerts..."
+              icon={<Search size={14} />}
+            />
+          </div>
         </div>
 
-        {showPreferences && (
-          <section className="rounded-lg border border-border bg-surface p-4 sm:p-5">
-            <div className="mb-4"><h2 className="text-sm font-semibold text-fg">Notification preferences</h2><p className="mt-1 text-xs text-muted">Choose the activity that should appear in this workspace.</p></div>
-            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-              {[['stock', 'Stock alerts', 'Low-stock and out-of-stock warnings'], ['credit', 'Credit alerts', 'Overdue balances and collections'], ['sales', 'Sales summaries', 'Daily revenue and payment updates'], ['team', 'Team activity', 'Invitations and staff changes'], ['email', 'Email delivery', 'Send critical alerts by email'], ['push', 'In-app alerts', 'Show alerts in the workspace']].map(([key, label, description]) => (
-                <label className="flex cursor-pointer items-center justify-between gap-3 rounded-md border border-border p-3 transition hover:bg-bg" key={key}>
-                  <span><strong className="block text-xs font-semibold text-fg">{label}</strong><small className="mt-0.5 block text-[11px] text-muted">{description}</small></span>
-                  <input className="h-4 w-4 accent-brand-600" type="checkbox" checked={preferences[key as keyof typeof preferences]} onChange={() => togglePreference(key as keyof typeof preferences)} />
-                </label>
-              ))}
-            </div>
-          </section>
-        )}
+        <div className="flex items-center justify-between px-4 py-2 border-b border-border bg-elevated text-xs text-muted">
+          <span>
+            {loading ? 'Loading…' : `${items.length} showing`}
+          </span>
+          <button
+            type="button"
+            onClick={clearRead}
+            disabled={busy === 'clear'}
+            className="hover:text-fg transition disabled:opacity-40"
+          >
+            Clear read
+          </button>
+        </div>
 
-        <section className="overflow-hidden rounded-lg border border-border bg-surface">
-          <div className="border-b border-border p-4 sm:p-5">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-              <div className="flex gap-1 overflow-x-auto pb-1" role="tablist" aria-label="Alert filters">
-                {typeLabels.map((item) => (
-                  <button key={item.id} className={`shrink-0 rounded-md px-3 py-2 text-xs font-semibold transition ${filter === item.id ? 'bg-brand-600 text-white' : 'text-muted hover:bg-bg hover:text-fg'}`} type="button" onClick={() => setFilter(item.id)} role="tab" aria-selected={filter === item.id}>{item.label}</button>
-                ))}
-              </div>
-              <div className="w-full lg:max-w-sm">
-                <label className="relative block">
-                  <span className="sr-only">Search alerts</span>
-                  <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" size={15} />
-                  <input
-                    ref={searchInputRef}
-                    className="w-full rounded-md border border-border bg-bg py-2 pl-9 pr-20 text-sm text-fg outline-none transition placeholder:text-muted focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
-                    value={search}
-                    onChange={(event) => setSearch(event.target.value)}
-                    placeholder="Search title, source or detail..."
-                  />
-                  <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 rounded border border-border bg-surface px-1.5 py-0.5 text-[10px] font-semibold text-muted">/</span>
-                  {search && (
-                    <button className="absolute right-8 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted transition hover:bg-elevated hover:text-fg" type="button" onClick={() => setSearch('')} aria-label="Clear search">
-                      <X size={14} />
-                    </button>
-                  )}
-                </label>
-                <div className="mt-2 flex items-center justify-between text-[11px] text-muted">
-                  <span className="inline-flex items-center gap-1"><Search size={11} /> Searching all alert details</span>
-                  {search && <span className="font-medium text-brand-700 dark:text-brand-300">Filtering '{search}'</span>}
-                </div>
-              </div>
-            </div>
-            <div className="mt-4 flex items-center justify-between gap-3 text-xs text-muted">
-              <span>{visibleAlerts.length} showing</span>
-              <div className="flex items-center gap-3">
-                <button className="font-semibold text-brand-700 hover:text-brand-800 dark:text-brand-300" type="button" onClick={markAllRead}>Mark all read</button>
-                <button className="font-semibold text-muted hover:text-fg" type="button" onClick={clearRead}>Clear read</button>
-              </div>
-            </div>
+        {loading ? (
+          <div className="flex items-center justify-center py-16">
+            <Spinner size="lg" />
           </div>
-
-          <div className="divide-y divide-border">
-            {visibleAlerts.length === 0 ? (
-              <div className="px-5 py-16 text-center"><Info className="mx-auto text-muted" size={24} /><strong className="mt-3 block text-sm text-fg">No alerts match this view</strong><span className="mt-1 block text-xs text-muted">Try another filter or search term.</span></div>
-            ) : visibleAlerts.map((alert) => {
-              const Icon = alert.type === 'danger' || alert.type === 'warning' ? AlertTriangle : alert.type === 'success' ? CheckCircle2 : Info;
-              const tone = alert.type === 'danger' ? 'bg-red-50 text-red-600 dark:bg-red-500/10 dark:text-red-300' : alert.type === 'warning' ? 'bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-300' : alert.type === 'success' ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-300' : 'bg-brand-50 text-brand-600 dark:bg-brand-500/10 dark:text-brand-300';
+        ) : items.length === 0 ? (
+          <div className="text-center py-16 px-4">
+            <Bell size={32} className="mx-auto text-muted opacity-40 mb-3" />
+            <p className="text-sm text-muted">No alerts match this view.</p>
+            <p className="text-xs text-muted mt-1">
+              Try a different filter or search term.
+            </p>
+          </div>
+        ) : (
+          <ul className="divide-y divide-border">
+            {items.map((n) => {
+              const Icon = SEVERITY_ICON[n.severity];
+              const unread = !n.readAt;
               return (
-                <article className={`flex gap-3 px-4 py-4 transition hover:bg-bg sm:gap-4 sm:px-5 ${alert.unread ? 'border-l-2 border-l-brand-600 bg-brand-50/30 dark:bg-brand-500/[0.03]' : ''}`} key={alert.id}>
-                  <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md ${tone}`}><Icon size={17} /></span>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
-                      <div className="min-w-0"><div className="flex items-center gap-2"><strong className="truncate text-sm font-semibold text-fg">{alert.title}</strong>{alert.unread && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-brand-600" />}</div><span className="mt-1 block text-[11px] text-muted">{alert.source} <span className="px-1">·</span> {alert.time}</span></div>
-                      <div className="flex shrink-0 items-center gap-3 text-xs">
-                        <button className="inline-flex items-center gap-1 font-semibold text-muted hover:text-fg" type="button" onClick={() => markRead(alert.id)}><Check size={13} />{alert.unread ? 'Mark read' : 'Read'}</button>
-                        <button className="inline-flex items-center gap-1 font-semibold text-muted hover:text-fg" type="button" onClick={() => snooze(alert.id)}><Clock3 size={13} />Snooze</button>
-                        <button className="inline-flex items-center gap-1 font-semibold text-muted hover:text-fg" type="button" onClick={() => archive(alert.id)}><Archive size={13} />Archive</button>
+                <li
+                  key={n._id}
+                  className={classNames(
+                    'border-l-4 px-4 py-4 transition',
+                    SEVERITY_ROW[n.severity],
+                    busy === n._id && 'opacity-60'
+                  )}
+                >
+                  <div className="flex items-start gap-3">
+                    <div
+                      className={classNames(
+                        'shrink-0 w-9 h-9 rounded-full flex items-center justify-center',
+                        n.severity === 'danger' &&
+                          'bg-red-100 text-red-600 dark:bg-red-500/15 dark:text-red-400',
+                        n.severity === 'warning' &&
+                          'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400',
+                        n.severity === 'success' &&
+                          'bg-green-100 text-green-700 dark:bg-green-500/15 dark:text-green-400',
+                        n.severity === 'info' &&
+                          'bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-400'
+                      )}
+                    >
+                      <Icon size={16} />
+                    </div>
+
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p
+                              className={classNames(
+                                'text-sm truncate',
+                                unread
+                                  ? 'font-semibold text-fg'
+                                  : 'font-medium text-fg'
+                              )}
+                            >
+                              {n.title}
+                            </p>
+                            {unread && (
+                              <span className="w-2 h-2 rounded-full bg-brand-600 shrink-0" />
+                            )}
+                            <Badge variant={SEVERITY_VARIANT[n.severity]}>
+                              {n.source}
+                            </Badge>
+                          </div>
+                          <p className="text-sm text-muted mt-1">{n.detail}</p>
+                          <p className="text-xs text-muted mt-1.5">
+                            {relativeTime(n.createdAt)}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-3 mt-3">
+                        {unread && (
+                          <button
+                            type="button"
+                            onClick={() => markRead(n._id)}
+                            disabled={busy === n._id}
+                            className="text-xs font-medium text-brand-600 dark:text-brand-400 hover:underline disabled:opacity-40"
+                          >
+                            Mark read
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => snooze(n._id)}
+                          disabled={busy === n._id}
+                          className="inline-flex items-center gap-1 text-xs font-medium text-muted hover:text-fg transition disabled:opacity-40"
+                        >
+                          <Clock size={12} />
+                          Snooze
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => archive(n._id)}
+                          disabled={busy === n._id}
+                          className="inline-flex items-center gap-1 text-xs font-medium text-muted hover:text-fg transition disabled:opacity-40"
+                        >
+                          <Archive size={12} />
+                          Archive
+                        </button>
                       </div>
                     </div>
-                    <p className="mt-2 text-sm leading-6 text-muted">{alert.detail}</p>
                   </div>
-                </article>
+                </li>
               );
             })}
+          </ul>
+        )}
+
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between px-4 py-3 border-t border-border bg-elevated text-sm">
+            <span className="text-muted">
+              Page {page} of {totalPages} · {total} total
+            </span>
+            <div className="flex gap-1">
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={page <= 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+              >
+                Prev
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={page >= totalPages}
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              >
+                Next
+              </Button>
+            </div>
           </div>
-          {notice && <div className="border-t border-border bg-brand-50 px-5 py-3 text-xs font-medium text-brand-700 dark:bg-brand-500/10 dark:text-brand-300" role="status">{notice}</div>}
-        </section>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+function SummaryCard({
+  label,
+  value,
+  icon,
+  tone,
+}: {
+  label: string;
+  value: number;
+  icon: React.ReactNode;
+  tone: 'danger' | 'warning' | 'info' | 'success';
+}) {
+  const toneClass = {
+    danger: 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-500/10',
+    warning:
+      'text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/10',
+    info: 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-500/10',
+    success:
+      'text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-500/10',
+  }[tone];
+
+  return (
+    <div className="bg-surface border border-border rounded-lg p-4">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-xs text-muted">{label}</p>
+          <p className="text-xl font-semibold text-fg mt-1 truncate">{value}</p>
+        </div>
+        <div
+          className={classNames(
+            'shrink-0 w-9 h-9 rounded-lg flex items-center justify-center',
+            toneClass
+          )}
+        >
+          {icon}
+        </div>
       </div>
     </div>
   );

@@ -1,0 +1,87 @@
+appId: com.bizos.desktop
+productName: BizOS
+copyright: Copyright © 2026 BizOS
+
+directories:
+  output: release/${version}
+  buildResources: assets
+
+files:
+  - out/**/*
+  - dist/renderer/**/*
+  - package.json
+  - "!**/*.map"
+  - "!**/*.ts"
+  - "!node_modules/**/{test,tests,__tests__,example,examples,doc,docs}/**"
+  - "!node_modules/**/*.{md,markdown,map}"
+
+asar: true
+
+extraResources:
+  - from: assets
+    to: assets
+    filter:
+      - "**/*"
+
+win:
+  icon: assets/icon.ico
+  target:
+    - target: nsis
+      arch:
+        - x64
+    - target: portable
+      arch:
+        - x64
+  artifactName: ${productName}-${version}-${arch}-setup.${ext}
+  publisherName: BizOS
+  requestedExecutionLevel: asInvoker
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowElevation: true
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: BizOS
+  deleteAppDataOnUninstall: false
+  artifactName: ${productName}-Setup-${version}.${ext}
+  uninstallDisplayName: BizOS
+  installerIcon: assets/icon.ico
+  uninstallerIcon: assets/icon.ico
+  installerHeaderIcon: assets/icon.ico
+
+portable:
+  artifactName: ${productName}-Portable-${version}.${ext}
+
+mac:
+  icon: assets/icon.icns
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+  category: public.app-category.business
+  artifactName: ${productName}-${version}-${arch}.${ext}
+
+dmg:
+  title: ${productName} ${version}
+
+linux:
+  icon: assets/icon.png
+  target:
+    - target: AppImage
+      arch:
+        - x64
+    - target: deb
+      arch:
+        - x64
+  category: Office
+  artifactName: ${productName}-${version}-${arch}.${ext}
+  synopsis: Business OS for small shops
+  description: Point of sale, inventory, invoicing and insights.
+
+publish:
+  provider: generic
+  url: https://updates.bizos.com/${productName}/${os}
+  channel: latest

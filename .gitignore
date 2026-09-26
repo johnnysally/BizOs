@@ -1,55 +1,107 @@
-# Dependencies
+# ============================================================
+# BizOS — unified .gitignore
+# Covers: backend/  client/  desktop/  admin/
+# ============================================================
+
+# ---------- dependencies ----------
 node_modules/
 .pnp
 .pnp.js
+.yarn/
+yarn-error.log
+jspm_packages/
 
-# Env files (all apps)
-.env
-.env.local
-.env.*.local
-!.env.example
-
-# Build outputs
+# ---------- builds ----------
+# vite / tsc / electron-vite
+out/
 dist/
 build/
-out/
-.next/
-.turbo/
+*.tsbuildinfo
 
-# Logs
+# electron-builder
+release/
+*.blockmap
+latest.yml
+latest-mac.yml
+latest-linux.yml
+builder-effective-config.yaml
+electron-builder-cache/
+.electron-builder-cache/
+
+# ---------- env / secrets ----------
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env.*.local
+*.env
+!.env.example
+
+# ---------- logs ----------
 logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+lerna-debug.log*
+.npm/_logs/
 
-# Caches
+# ---------- caches ----------
 .cache/
-.parcel-cache/
-.vite/
+.npm/
 .eslintcache
-.stylelintcache
-tsconfig.tsbuildinfo
+.parcel-cache
+.vite/
+node_modules/.cache/
+coverage/
+.nyc_output/
 
-# OS
-.DS_Store
-Thumbs.db
-desktop.ini
-
-# Editor
+# ---------- editor ----------
 .vscode/*
 !.vscode/extensions.json
 !.vscode/settings.json
+!.vscode/launch.json
 .idea/
 *.swp
 *.swo
 *~
 
-# Coverage
-coverage/
-.nyc_output/
+# ---------- OS ----------
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
 
-# Misc
-.tmp/
+# ---------- runtime / data ----------
+uploads/
+tmp/
 temp/
+*.pid
+*.seed
+*.pid.lock
+
+# ---------- database ----------
+*.sqlite
+*.sqlite3
+*.db
+data/
+backups-local/
+
+# ---------- backup outputs ----------
+backend/backups/*.json
+!backend/backups/.gitkeep
+
+# ---------- misc ----------
+TODO.md
+NOTES.md
+scratch/
+_*.txt
+_dump*.txt
+_pasted*.txt
+*.code-workspace
