@@ -32,35 +32,35 @@ export function PlanCard({
 
   const inner = (
     <>
-      <div className="flex items-start justify-between gap-3 mb-4">
+      <div className="mb-1.5 flex items-start justify-between gap-2">
         <div>
-          <p className="font-semibold text-fg text-lg">{plan.name}</p>
+          <p className="text-xs font-semibold text-fg sm:text-sm">{plan.name}</p>
           {plan.description && (
-            <p className="text-xs text-muted mt-1">{plan.description}</p>
+            <p className="mt-1 text-[9px] leading-relaxed text-muted sm:text-[10px]">{plan.description}</p>
           )}
         </div>
 
         {featured && (
-          <span className="inline-flex items-center rounded-full border border-brand-500/30 bg-brand-500/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-brand-600 dark:text-brand-300">
+          <span className="inline-flex items-center rounded-full border border-brand-500/30 bg-brand-500/10 px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-[0.12em] text-brand-600 dark:text-brand-300">
             Popular
           </span>
         )}
       </div>
 
-      <div className="mb-5">
-        <p className="text-3xl font-bold text-fg leading-none">
+      <div className="mb-2">
+        <p className="text-lg font-bold leading-none text-fg sm:text-xl">
           {isFree
             ? 'Free'
             : `${plan.price.currency} ${plan.price.amount.toLocaleString()}`}
         </p>
         {!isFree && (
-          <p className="mt-2 text-xs font-medium text-muted uppercase tracking-[0.14em]">
+          <p className="mt-1.5 text-[8px] font-medium uppercase tracking-[0.14em] text-muted sm:text-[9px]">
             {intervalLabel(plan.price.interval)}
           </p>
         )}
       </div>
 
-      <ul className="space-y-2.5 text-sm text-muted mb-6">
+      <ul className="mb-2 space-y-1 text-[9px] text-muted sm:text-[10px]">
         <li className="flex items-center gap-2">
           <span className="h-1.5 w-1.5 rounded-full bg-brand-500" />
           {plan.limits.maxOwners} owner(s)
@@ -122,11 +122,11 @@ export function PlanCard({
   );
 
   const wrapperClass = classNames(
-    'relative p-6 rounded-2xl border transition-all duration-200 bg-surface shadow-sm',
+    'relative w-full p-4 rounded-2xl border text-left transition-all duration-200',
     selected
-      ? 'border-brand-500 ring-2 ring-brand-500/20 shadow-brand-500/10'
-      : 'border-border hover:border-slate-400 dark:hover:border-slate-600',
-    clickable && 'text-left cursor-pointer',
+      ? 'border-brand-400 bg-brand-500/10 shadow-[0_0_0_1px_rgba(96,165,250,0.2)] ring-1 ring-brand-500/20'
+      : 'border-border bg-white hover:border-slate-300 dark:border-slate-700 dark:bg-slate-900/70 dark:hover:border-slate-500',
+    clickable && 'cursor-pointer hover:-translate-y-0.5',
     className
   );
 
