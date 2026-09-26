@@ -9,6 +9,9 @@ import {
   Sun,
   Moon,
   Bell,
+  CircleCheck,
+  ArrowUpRight,
+  Zap,
   LayoutDashboard,
   ShoppingCart,
   Receipt,
@@ -124,7 +127,8 @@ export function AppHeader() {
     .flatMap((section) => section.items)
     .find((item) => item.to === ROUTES.app
       ? location.pathname === item.to
-      : location.pathname.startsWith(item.to))?.label || 'Workspace';
+      : location.pathname.startsWith(item.to))?.label
+    || (location.pathname === ROUTES.notifications ? 'Notifications' : 'Workspace');
 
   return (
     <header className="h-16 shrink-0 bg-surface border-b border-border relative z-10">
@@ -158,14 +162,30 @@ export function AppHeader() {
           </div>
 
           <div className="hidden md:block min-w-0 border-l border-border pl-4">
-            <p className="text-sm font-semibold text-fg leading-none truncate">{currentPage}</p>
+            <div className="flex items-center gap-2">
+              <p className="text-sm font-semibold text-fg leading-none truncate">{currentPage}</p>
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300">
+                <CircleCheck size={10} /> Live
+              </span>
+            </div>
             <p className="text-[11px] text-muted leading-none mt-1 truncate">
-              {tenant?.name || 'Your workspace'}
+              {tenant?.name || 'Your workspace'} <span className="px-1 text-border">/</span> {role}
             </p>
           </div>
         </div>
 
         <div className="flex items-center gap-1 shrink-0">
+          <button
+            type="button"
+            onClick={() => navigate(ROUTES.pos)}
+            className="hidden sm:inline-flex items-center gap-1.5 rounded-md bg-brand-600 px-3 py-2 text-xs font-semibold text-white shadow-sm shadow-brand-600/20 transition hover:bg-brand-700"
+            aria-label="Start a new sale"
+          >
+            <Zap size={14} />
+            <span>New sale</span>
+            <ArrowUpRight size={13} className="opacity-70" />
+          </button>
+
           <button
             type="button"
             onClick={() => navigate(ROUTES.notifications)}
@@ -234,6 +254,8 @@ export function AppHeader() {
           />
         </div>
       </div>
+
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-brand-500/50 to-transparent" />
 
       {open && (
         <div className="md:hidden absolute top-16 left-0 right-0 bg-surface border-b border-border shadow-lg max-h-[calc(100vh-4rem)] overflow-y-auto z-20">

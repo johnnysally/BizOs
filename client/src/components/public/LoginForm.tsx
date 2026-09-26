@@ -96,7 +96,7 @@ export function LoginForm() {
       </div>
 
       {error && (
-        <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg p-3">
+        <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg p-3 dark:text-red-300 dark:bg-red-500/10 dark:border-red-500/30">
           {error}
         </div>
       )}
@@ -105,7 +105,7 @@ export function LoginForm() {
         Log in
       </Button>
 
-      <p className="text-sm text-slate-500 text-center">
+      <p className="text-sm text-muted text-center">
         Don't have an account?{' '}
         <Link to={ROUTES.register} className="text-brand-600 hover:underline">
           Get started

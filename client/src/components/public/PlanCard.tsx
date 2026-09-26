@@ -1,10 +1,11 @@
-import { Check } from 'lucide-react';
+﻿import { Check } from 'lucide-react';
 import { classNames } from '@/utils/classNames';
 import type { PublicPlan } from '@/api/site';
 
 interface Props {
   plan: PublicPlan;
   selected?: boolean;
+  featured?: boolean;
   onClick?: () => void;
   ctaLabel?: string;
   ctaHref?: string;
@@ -20,6 +21,7 @@ function intervalLabel(interval: string) {
 export function PlanCard({
   plan,
   selected,
+  featured,
   onClick,
   ctaLabel,
   ctaHref,
@@ -30,43 +32,75 @@ export function PlanCard({
 
   const inner = (
     <>
-      <div className="flex items-start justify-between gap-2 mb-2">
-        <p className="font-semibold text-slate-900 text-lg">{plan.name}</p>
-        {selected && (
-          <div className="w-5 h-5 rounded-full bg-brand-600 flex items-center justify-center shrink-0">
-            <Check size={12} className="text-white" />
-          </div>
+      <div className="flex items-start justify-between gap-3 mb-4">
+        <div>
+          <p className="font-semibold text-fg text-lg">{plan.name}</p>
+          {plan.description && (
+            <p className="text-xs text-muted mt-1">{plan.description}</p>
+          )}
+        </div>
+
+        {featured && (
+          <span className="inline-flex items-center rounded-full border border-brand-500/30 bg-brand-500/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-brand-600 dark:text-brand-300">
+            Popular
+          </span>
         )}
       </div>
 
-      <p className="text-2xl font-bold text-slate-900 mb-1">
-        {isFree
-          ? 'Free'
-          : `${plan.price.currency} ${plan.price.amount.toLocaleString()}`}
+      <div className="mb-5">
+        <p className="text-3xl font-bold text-fg leading-none">
+          {isFree
+            ? 'Free'
+            : `${plan.price.currency} ${plan.price.amount.toLocaleString()}`}
+        </p>
         {!isFree && (
-          <span className="text-xs font-normal text-slate-500 ml-1">
+          <p className="mt-2 text-xs font-medium text-muted uppercase tracking-[0.14em]">
             {intervalLabel(plan.price.interval)}
-          </span>
+          </p>
         )}
-      </p>
+      </div>
 
-      {plan.description && (
-        <p className="text-xs text-slate-500 mb-4">{plan.description}</p>
-      )}
-
-      <ul className="space-y-1.5 text-sm text-slate-600 mb-5">
-        <li>• {plan.limits.maxOwners} owner(s)</li>
-        <li>• {plan.limits.maxCashiers} cashier(s)</li>
-        <li>• {plan.limits.maxProducts.toLocaleString()} products</li>
+      <ul className="space-y-2.5 text-sm text-muted mb-6">
+        <li className="flex items-center gap-2">
+          <span className="h-1.5 w-1.5 rounded-full bg-brand-500" />
+          {plan.limits.maxOwners} owner(s)
+        </li>
+        <li className="flex items-center gap-2">
+          <span className="h-1.5 w-1.5 rounded-full bg-brand-500" />
+          {plan.limits.maxCashiers} cashier(s)
+        </li>
+        <li className="flex items-center gap-2">
+          <span className="h-1.5 w-1.5 rounded-full bg-brand-500" />
+          {plan.limits.maxProducts.toLocaleString()} products
+        </li>
         {plan.limits.maxAiCallsPerDay > 0 && (
-          <li>• {plan.limits.maxAiCallsPerDay} AI calls / day</li>
+          <li className="flex items-center gap-2">
+            <span className="h-1.5 w-1.5 rounded-full bg-brand-500" />
+            {plan.limits.maxAiCallsPerDay} AI calls / day
+          </li>
         )}
-        {plan.features.aiInsights && <li>• AI insights</li>}
-        {plan.features.multiLocation && <li>• Multi-location</li>}
-        {plan.features.api && <li>• API access</li>}
+        {plan.features.aiInsights && (
+          <li className="flex items-center gap-2">
+            <span className="h-1.5 w-1.5 rounded-full bg-brand-500" />
+            AI insights
+          </li>
+        )}
+        {plan.features.multiLocation && (
+          <li className="flex items-center gap-2">
+            <span className="h-1.5 w-1.5 rounded-full bg-brand-500" />
+            Multi-location
+          </li>
+        )}
+        {plan.features.api && (
+          <li className="flex items-center gap-2">
+            <span className="h-1.5 w-1.5 rounded-full bg-brand-500" />
+            API access
+          </li>
+        )}
         {plan.trialDays > 0 && (
-          <li className="text-brand-700 font-medium">
-            • {plan.trialDays}-day free trial
+          <li className="flex items-center gap-2 text-brand-700 font-medium">
+            <Check size={14} className="text-brand-600" />
+            {plan.trialDays}-day free trial
           </li>
         )}
       </ul>
@@ -74,7 +108,12 @@ export function PlanCard({
       {ctaLabel && ctaHref && (
         <a
           href={ctaHref}
-          className="block w-full text-center px-4 py-2 rounded-md bg-brand-600 text-white text-sm font-medium hover:bg-brand-700 transition"
+          className={classNames(
+            'block w-full text-center px-4 py-3 rounded-xl text-sm font-semibold transition',
+            selected
+              ? 'bg-brand-600 text-white hover:bg-brand-500 shadow-lg shadow-brand-500/20'
+              : 'bg-slate-100 text-slate-900 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700'
+          )}
         >
           {ctaLabel}
         </a>
@@ -83,10 +122,10 @@ export function PlanCard({
   );
 
   const wrapperClass = classNames(
-    'p-5 rounded-lg border-2 transition bg-white',
+    'relative p-6 rounded-2xl border transition-all duration-200 bg-surface shadow-sm',
     selected
-      ? 'border-brand-500 ring-2 ring-brand-500/20'
-      : 'border-slate-200 hover:border-slate-300',
+      ? 'border-brand-500 ring-2 ring-brand-500/20 shadow-brand-500/10'
+      : 'border-border hover:border-slate-400 dark:hover:border-slate-600',
     clickable && 'text-left cursor-pointer',
     className
   );

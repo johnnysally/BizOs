@@ -96,9 +96,9 @@ export function RegisterForm() {
 
   return (
     <>
-      <form onSubmit={onSubmit} className="space-y-8">
+      <form onSubmit={onSubmit} className="space-y-6">
         <div className="space-y-4">
-          <h2 className="text-lg font-semibold text-slate-900">
+          <h2 className="text-lg font-semibold text-fg">
             Business details
           </h2>
 
@@ -200,7 +200,7 @@ export function RegisterForm() {
 
         <div className="space-y-4">
           <div>
-            <h2 className="text-lg font-semibold text-slate-900">
+              <h2 className="text-lg font-semibold text-fg">
               Choose a plan
             </h2>
             {fieldErrors.planId && (
@@ -211,11 +211,11 @@ export function RegisterForm() {
           </div>
 
           {plans.length === 0 ? (
-            <div className="text-sm text-slate-500 bg-slate-50 border border-slate-200 rounded-lg p-4">
+            <div className="text-sm text-muted bg-elevated border border-border rounded-lg p-4">
               No plans available right now. Contact support.
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
               {plans.map((plan) => (
                 <PlanCard
                   key={plan.code}
@@ -244,9 +244,9 @@ export function RegisterForm() {
                   });
                 }
               }}
-              className="mt-0.5 h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500 shrink-0"
+              className="mt-0.5 h-4 w-4 rounded border-border text-brand-600 focus:ring-brand-500 shrink-0"
             />
-            <span className="text-sm text-slate-600 leading-snug">
+            <span className="text-sm text-muted leading-snug">
               I agree to the{' '}
               <button
                 type="button"
@@ -281,7 +281,7 @@ export function RegisterForm() {
         </div>
 
         {error && (
-          <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg p-3">
+          <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg p-3 dark:text-red-300 dark:bg-red-500/10 dark:border-red-500/30">
             {error}
           </div>
         )}
